@@ -73,6 +73,23 @@ Do not delegate ordinary coding work just because a profile exists. Use normal
 DevSpace tools unless the user asked for delegation, another agent's opinion,
 parallel work, or a named subagent.
 
+Some Claude profiles may declare native Claude subagents in their profile
+configuration. Use such a profile when the user explicitly asks for one Claude
+session to fan out across multiple specialized workers. Claude local-agent
+sessions run with full local permission; native `tools` declarations describe
+worker capabilities rather than a DevSpace sandbox. The command remains the same:
+
+```bash
+devspace agents run <claude-multi-agent-profile> "<parent task and explicit subtask assignments>"
+```
+
+Do not invoke `claude --agents` directly. The profile owns native agent
+definitions and capability declarations; DevSpace owns the outer worker
+lifecycle. `open_workspace` exposes each profile's scope, source path, shadowing
+relationship, effective permission, and complete native subagent definitions.
+Afterward, use `devspace agents show <id>` and independently verify the parent
+agent's synthesized result.
+
 ## Worker prompts
 
 Agents start with only the prompt you send plus their configured profile

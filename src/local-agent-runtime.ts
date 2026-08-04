@@ -9,6 +9,17 @@ import type {
 
 export type LocalAgentWriteMode = "read_only" | "allowed" | "full_access";
 
+export interface ClaudeNativeAgentDefinition {
+  description: string;
+  prompt: string;
+  tools: string[];
+  model?: string;
+}
+
+export interface ClaudeNativeSubagents {
+  agents: Record<string, ClaudeNativeAgentDefinition>;
+}
+
 export interface LocalAgentRunInput {
   prompt: string;
   workspace: string;
@@ -16,6 +27,7 @@ export interface LocalAgentRunInput {
   writeMode?: LocalAgentWriteMode;
   model?: string;
   thinking?: string;
+  claudeNativeSubagents?: ClaudeNativeSubagents;
 }
 
 export interface LocalAgentRunResult {

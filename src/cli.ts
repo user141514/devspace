@@ -24,6 +24,7 @@ import {
 import {
   formatAvailableLocalAgentTargets,
   parseLocalAgentRunArgs,
+  resolveLocalAgentProfile,
   resolveLocalAgentTarget,
 } from "./local-agent-targets.js";
 import { createLocalAgentStore, type LocalAgentRecord } from "./local-agent-store.js";
@@ -459,7 +460,7 @@ async function runAgentsWorker(args: string[]): Promise<void> {
   store.update(record.id, { status: "running", error: undefined });
   try {
     const profiles = await loadLocalAgentProfiles(config, record.workspaceRoot);
-    const profile = profiles.find((candidate) => candidate.name === record.profileName);
+    const profile = resolveLocalAgentProfile(record.profileName, profiles);
     const prompt = await readFile(promptFile, "utf8");
     const result = profile
       ? await runLocalAgentProfile(profile, record, prompt)
@@ -492,6 +493,7 @@ async function runLocalAgentProfile(
     writeMode: "allowed",
     model: record.model ?? profile.model,
     thinking: record.thinking ?? profile.thinking,
+    claudeNativeSubagents: profile.claudeNativeSubagents,
   });
 }
 

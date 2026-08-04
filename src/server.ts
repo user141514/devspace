@@ -214,18 +214,30 @@ function serverInstructions(config: ServerConfig): string {
 
 function formatVisibleAgent(agent: {
   name: string;
+  qualifiedName: string;
+  scope: "user" | "project";
+  isDefault: boolean;
+  shadows: string[];
   provider: string;
   model?: string;
   thinking?: string;
+  effectivePermission?: "full_access";
+  nativeSubagents?: Array<{ name: string }>;
   providerAvailable?: boolean;
   providerUnavailableReason?: string;
 }): string {
+  const defaultName = agent.isDefault ? `, default as ${agent.name}` : "";
+  const shadows = agent.shadows.length > 0 ? `, shadows ${agent.shadows.join(", ")}` : "";
   const model = agent.model ? `, model ${agent.model}` : "";
   const thinking = agent.thinking ? `, thinking ${agent.thinking}` : "";
+  const permission = agent.effectivePermission ? `, permission ${agent.effectivePermission}` : "";
+  const nativeSubagents = agent.nativeSubagents?.length
+    ? `, native subagents ${agent.nativeSubagents.map((subagent) => subagent.name).join(", ")}`
+    : "";
   const availability = agent.providerAvailable === false
     ? `, unavailable: ${agent.providerUnavailableReason ?? "provider unavailable"}`
     : "";
-  return `${agent.name} (${agent.provider}${model}${thinking}${availability})`;
+  return `${agent.qualifiedName} (${agent.scope}${defaultName}${shadows}, ${agent.provider}${model}${thinking}${permission}${nativeSubagents}${availability})`;
 }
 
 function formatUnavailableAgentProvider(provider: LocalAgentProviderAvailability): string {
@@ -254,12 +266,28 @@ const workspaceAgentsFileOutputSchema = z.object({
   content: z.string(),
 });
 
+const workspaceLocalNativeSubagentOutputSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  prompt: z.string(),
+  tools: z.array(z.string()),
+  model: z.string().optional(),
+});
+
 const workspaceLocalAgentOutputSchema = z.object({
   name: z.string(),
+  qualifiedName: z.string(),
+  scope: z.enum(["user", "project"]),
+  profilePath: z.string(),
+  isDefault: z.boolean(),
+  shadows: z.array(z.string()),
+  shadowedBy: z.string().optional(),
   description: z.string(),
   provider: z.string(),
   model: z.string().optional(),
   thinking: z.string().optional(),
+  effectivePermission: z.literal("full_access").optional(),
+  nativeSubagents: z.array(workspaceLocalNativeSubagentOutputSchema).optional(),
   providerAvailable: z.boolean().optional(),
   providerUnavailableReason: z.string().optional(),
 });

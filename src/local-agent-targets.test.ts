@@ -9,6 +9,10 @@ import type { LocalAgentProfile } from "./local-agent-profiles.js";
 const profiles: LocalAgentProfile[] = [
   {
     name: "reviewer",
+    qualifiedName: "project:reviewer",
+    scope: "project",
+    isDefault: true,
+    shadows: ["user:reviewer"],
     description: "Review changes.",
     provider: "codex",
     model: "gpt-5-codex",
@@ -18,7 +22,25 @@ const profiles: LocalAgentProfile[] = [
     disabled: false,
   },
   {
+    name: "reviewer",
+    qualifiedName: "user:reviewer",
+    scope: "user",
+    isDefault: false,
+    shadows: [],
+    shadowedBy: "project:reviewer",
+    description: "Global review defaults.",
+    provider: "claude",
+    model: "sonnet",
+    filePath: "/home/user/.devspace/agents/reviewer.md",
+    body: "Review globally.",
+    disabled: false,
+  },
+  {
     name: "claude",
+    qualifiedName: "project:claude",
+    scope: "project",
+    isDefault: true,
+    shadows: [],
     description: "A profile that shadows the raw provider.",
     provider: "opencode",
     model: "qwen/custom",
@@ -76,7 +98,7 @@ assert.throws(
 {
   const target = resolveLocalAgentTarget("reviewer", profiles);
   assert.equal(target?.kind, "profile");
-  assert.equal(target?.name, "reviewer");
+  assert.equal(target?.name, "project:reviewer");
   assert.equal(target?.provider, "codex");
   assert.equal(target?.model, "gpt-5-codex");
   assert.equal(target?.thinking, "high");
@@ -85,8 +107,24 @@ assert.throws(
 {
   const target = resolveLocalAgentTarget("reviewer", profiles, "gpt-5.2", "xhigh");
   assert.equal(target?.kind, "profile");
+  assert.equal(target?.name, "project:reviewer");
   assert.equal(target?.model, "gpt-5.2");
   assert.equal(target?.thinking, "xhigh");
+}
+
+{
+  const target = resolveLocalAgentTarget("user:reviewer", profiles);
+  assert.equal(target?.kind, "profile");
+  assert.equal(target?.name, "user:reviewer");
+  assert.equal(target?.provider, "claude");
+  assert.equal(target?.model, "sonnet");
+}
+
+{
+  const target = resolveLocalAgentTarget("project:reviewer", profiles);
+  assert.equal(target?.kind, "profile");
+  assert.equal(target?.name, "project:reviewer");
+  assert.equal(target?.provider, "codex");
 }
 
 {
@@ -112,5 +150,8 @@ assert.throws(
 }
 
 assert.equal(resolveLocalAgentTarget("missing", profiles), undefined);
-assert.match(formatAvailableLocalAgentTargets(profiles), /profiles: reviewer, claude/);
+assert.match(
+  formatAvailableLocalAgentTargets(profiles),
+  /profiles: reviewer, project:reviewer, user:reviewer, claude, project:claude/,
+);
 assert.match(formatAvailableLocalAgentTargets([]), /providers: codex, claude, opencode, pi, cursor, copilot/);

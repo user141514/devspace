@@ -77,17 +77,27 @@ export function parseLocalAgentRunArgs(args: string[]): ParsedLocalAgentRunArgs 
   return { target, prompt, model, thinking };
 }
 
+export function resolveLocalAgentProfile(
+  target: string,
+  profiles: LocalAgentProfile[],
+): LocalAgentProfile | undefined {
+  const qualifiedProfile = profiles.find((candidate) => candidate.qualifiedName === target);
+  if (qualifiedProfile) return qualifiedProfile;
+  if (target.includes(":")) return undefined;
+  return profiles.find((candidate) => candidate.name === target && candidate.isDefault);
+}
+
 export function resolveLocalAgentTarget(
   target: string,
   profiles: LocalAgentProfile[],
   modelOverride?: string,
   thinkingOverride?: string,
 ): LocalAgentTarget | undefined {
-  const profile = profiles.find((candidate) => candidate.name === target);
+  const profile = resolveLocalAgentProfile(target, profiles);
   if (profile) {
     return {
       kind: "profile",
-      name: profile.name,
+      name: profile.qualifiedName,
       provider: profile.provider,
       model: modelOverride ?? profile.model,
       thinking: thinkingOverride ?? profile.thinking,
@@ -109,7 +119,9 @@ export function resolveLocalAgentTarget(
 }
 
 export function formatAvailableLocalAgentTargets(profiles: LocalAgentProfile[]): string {
-  const profileNames = profiles.map((profile) => profile.name);
+  const profileNames = profiles.flatMap((profile) =>
+    profile.isDefault ? [profile.name, profile.qualifiedName] : [profile.qualifiedName],
+  );
   const parts = [
     profileNames.length > 0 ? `profiles: ${profileNames.join(", ")}` : undefined,
     `providers: ${LOCAL_AGENT_PROVIDERS.join(", ")}`,

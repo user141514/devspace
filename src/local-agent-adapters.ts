@@ -1,7 +1,11 @@
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { resolve } from "node:path";
 import { Readable, Writable } from "node:stream";
-import type { EffortLevel } from "@anthropic-ai/claude-agent-sdk";
+import type {
+  AgentDefinition,
+  EffortLevel,
+  Options as ClaudeAgentOptions,
+} from "@anthropic-ai/claude-agent-sdk";
 import type { LocalAgentProvider } from "./local-agent-profiles.js";
 import { removeDevspaceNodeModulesBinFromPath } from "./local-agent-path.js";
 import {
@@ -61,16 +65,7 @@ class ClaudeLocalAgentAdapter implements LocalAgentAdapter {
     const claudeExecutable = process.env.CLAUDE_COMMAND ?? resolveExecutable("claude");
     const messages = query({
       prompt: input.prompt,
-      options: {
-        cwd: input.workspace,
-        model: input.model,
-        ...(input.thinking ? { thinking: { type: "adaptive" } as const, effort: input.thinking as EffortLevel } : {}),
-        resume: input.providerSessionId,
-        permissionMode: "bypassPermissions",
-        allowDangerouslySkipPermissions: true,
-        env: claudeCommandEnvironment(process.env),
-        ...(claudeExecutable ? { pathToClaudeCodeExecutable: claudeExecutable } : {}),
-      },
+      options: buildClaudeQueryOptions(input, claudeExecutable),
     });
 
     let providerSessionId = input.providerSessionId ?? null;
@@ -95,6 +90,31 @@ class ClaudeLocalAgentAdapter implements LocalAgentAdapter {
       items,
     };
   }
+}
+
+export function buildClaudeQueryOptions(
+  input: LocalAgentRunInput,
+  claudeExecutable?: string,
+): ClaudeAgentOptions {
+  const nativeSubagents = input.claudeNativeSubagents;
+  return {
+    cwd: input.workspace,
+    model: input.model,
+    ...(input.thinking
+      ? { thinking: { type: "adaptive" } as const, effort: input.thinking as EffortLevel }
+      : {}),
+    resume: input.providerSessionId,
+    permissionMode: "bypassPermissions",
+    allowDangerouslySkipPermissions: true,
+    env: claudeCommandEnvironment(process.env),
+    ...(claudeExecutable ? { pathToClaudeCodeExecutable: claudeExecutable } : {}),
+    ...(nativeSubagents
+      ? {
+          allowedTools: ["Agent"],
+          agents: nativeSubagents.agents as Record<string, AgentDefinition>,
+        }
+      : {}),
+  };
 }
 
 function claudeResultError(record: Record<string, unknown>): string | undefined {

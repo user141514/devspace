@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { delimiter } from "node:path";
 import {
+  buildClaudeQueryOptions,
   claudeCommandEnvironment,
   createLocalAgentAdapter,
   extractOpenCodeFinalResponse,
@@ -205,6 +206,52 @@ assert.throws(
   assert.equal(env.CLAUDE_CODE_SSE_PORT, undefined);
   assert.equal(env.CLAUDE_AGENT_SDK_VERSION, undefined);
   assert.equal(env.PATH, "/usr/bin");
+}
+
+{
+  const options = buildClaudeQueryOptions({
+    prompt: "Review the runtime.",
+    workspace: "/workspace",
+    model: "sonnet",
+    thinking: "high",
+    providerSessionId: "session-123",
+    claudeNativeSubagents: {
+      agents: {
+        runtime: {
+          description: "Audit runtime behavior.",
+          prompt: "Inspect runtime code and report evidence.",
+          tools: ["Read", "Grep", "Glob"],
+          model: "inherit",
+        },
+      },
+    },
+  }, "/usr/local/bin/claude");
+
+  assert.deepEqual(options.allowedTools, ["Agent"]);
+  assert.deepEqual(options.thinking, { type: "adaptive" });
+  assert.equal(options.effort, "high");
+  assert.equal(options.resume, "session-123");
+  assert.equal(options.permissionMode, "bypassPermissions");
+  assert.equal(options.allowDangerouslySkipPermissions, true);
+  assert.deepEqual(options.agents, {
+    runtime: {
+      description: "Audit runtime behavior.",
+      prompt: "Inspect runtime code and report evidence.",
+      tools: ["Read", "Grep", "Glob"],
+      model: "inherit",
+    },
+  });
+  assert.equal(options.pathToClaudeCodeExecutable, "/usr/local/bin/claude");
+}
+
+{
+  const options = buildClaudeQueryOptions({
+    prompt: "Review the runtime.",
+    workspace: "/workspace",
+  });
+
+  assert.equal(options.allowedTools, undefined);
+  assert.equal(options.agents, undefined);
 }
 
 assert.equal(

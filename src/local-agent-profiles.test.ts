@@ -36,6 +36,20 @@ try {
       "provider: claude",
       "model: sonnet",
       "thinking: high",
+      "claude:",
+      "  agents:",
+      "    runtime:",
+      "      description: Audit runtime behavior.",
+      "      prompt: Inspect runtime code and report evidence.",
+      "      tools: [Read, Grep, Glob]",
+      "      model: inherit",
+      "    tests:",
+      "      description: Audit tests and regressions.",
+      "      prompt: Inspect tests and report missing coverage.",
+      "    isolated:",
+      "      description: Answer without tools.",
+      "      prompt: Return a concise independent assessment.",
+      "      tools: []",
       "---",
       "",
       "Project body.",
@@ -56,6 +70,87 @@ try {
       "",
     ].join("\n"),
   );
+  await writeFile(
+    join(workspaceRoot, ".devspace", "agents", "invalid-claude-native.md"),
+    [
+      "---",
+      "name: invalid-claude-native",
+      "description: Invalid Claude native profile.",
+      "provider: codex",
+      "claude:",
+      "  agents:",
+      "    reviewer:",
+      "      description: Review code.",
+      "      prompt: Review the codebase.",
+      "---",
+      "",
+      "Invalid body.",
+      "",
+    ].join("\n"),
+  );
+  await writeFile(
+    join(workspaceRoot, ".devspace", "agents", "invalid-native-name.md"),
+    [
+      "---",
+      "name: invalid-native-name",
+      "description: Invalid native name.",
+      "provider: claude",
+      "claude:",
+      "  agents:",
+      '    "bad name":',
+      "      description: Review code.",
+      "      prompt: Review the codebase.",
+      "---",
+      "",
+    ].join("\n"),
+  );
+  await writeFile(
+    join(workspaceRoot, ".devspace", "agents", "duplicate-native-tools.md"),
+    [
+      "---",
+      "name: duplicate-native-tools",
+      "description: Duplicate native tools.",
+      "provider: claude",
+      "claude:",
+      "  agents:",
+      "    reviewer:",
+      "      description: Review code.",
+      "      prompt: Review the codebase.",
+      "      tools: [Read, Read]",
+      "---",
+      "",
+    ].join("\n"),
+  );
+  await writeFile(
+    join(workspaceRoot, ".devspace", "agents", "unknown-native-field.md"),
+    [
+      "---",
+      "name: unknown-native-field",
+      "description: Unknown native field.",
+      "provider: claude",
+      "claude:",
+      "  agents:",
+      "    reviewer:",
+      "      description: Review code.",
+      "      prompt: Review the codebase.",
+      "      maxTurns: 2",
+      "---",
+      "",
+    ].join("\n"),
+  );
+  await writeFile(
+    join(workspaceRoot, ".devspace", "agents", "empty-native-agents.md"),
+    [
+      "---",
+      "name: empty-native-agents",
+      "description: Empty native agents.",
+      "provider: claude",
+      "claude:",
+      "  agents: {}",
+      "---",
+      "",
+    ].join("\n"),
+  );
 
   const enabledConfig = loadConfig({
     DEVSPACE_CONFIG_DIR: configDir,
@@ -65,19 +160,84 @@ try {
   });
   const profiles = await loadLocalAgentProfiles(enabledConfig, workspaceRoot);
 
-  assert.equal(profiles.length, 1);
-  assert.equal(profiles[0]?.name, "reviewer");
-  assert.equal(profiles[0]?.description, "Project reviewer #1.");
-  assert.equal(profiles[0]?.provider, "claude");
-  assert.equal(profiles[0]?.model, "sonnet");
-  assert.equal(profiles[0]?.thinking, "high");
-  assert.equal(profiles[0]?.body, "Project body.");
-  assert.deepEqual(summarizeLocalAgentProfile(profiles[0]!), {
+  assert.equal(profiles.length, 2);
+  const projectProfile = profiles.find((profile) => profile.qualifiedName === "project:reviewer");
+  const userProfile = profiles.find((profile) => profile.qualifiedName === "user:reviewer");
+
+  assert.equal(projectProfile?.name, "reviewer");
+  assert.equal(projectProfile?.scope, "project");
+  assert.equal(projectProfile?.isDefault, true);
+  assert.deepEqual(projectProfile?.shadows, ["user:reviewer"]);
+  assert.equal(projectProfile?.shadowedBy, undefined);
+  assert.equal(projectProfile?.description, "Project reviewer #1.");
+  assert.equal(projectProfile?.provider, "claude");
+  assert.equal(projectProfile?.model, "sonnet");
+  assert.equal(projectProfile?.thinking, "high");
+  assert.deepEqual(projectProfile?.claudeNativeSubagents, {
+    agents: {
+      runtime: {
+        description: "Audit runtime behavior.",
+        prompt: "Inspect runtime code and report evidence.",
+        tools: ["Read", "Grep", "Glob"],
+        model: "inherit",
+      },
+      tests: {
+        description: "Audit tests and regressions.",
+        prompt: "Inspect tests and report missing coverage.",
+        tools: ["Read", "Grep", "Glob"],
+      },
+      isolated: {
+        description: "Answer without tools.",
+        prompt: "Return a concise independent assessment.",
+        tools: [],
+      },
+    },
+  });
+  assert.equal(projectProfile?.body, "Project body.");
+
+  assert.equal(userProfile?.scope, "user");
+  assert.equal(userProfile?.isDefault, false);
+  assert.deepEqual(userProfile?.shadows, []);
+  assert.equal(userProfile?.shadowedBy, "project:reviewer");
+  assert.equal(userProfile?.description, "Global reviewer.");
+  assert.equal(userProfile?.provider, "codex");
+
+  assert.deepEqual(summarizeLocalAgentProfile(projectProfile!), {
     name: "reviewer",
+    qualifiedName: "project:reviewer",
+    scope: "project",
+    profilePath: join(workspaceRoot, ".devspace", "agents", "reviewer.md"),
+    isDefault: true,
+    shadows: ["user:reviewer"],
+    shadowedBy: undefined,
     description: "Project reviewer #1.",
     provider: "claude",
     model: "sonnet",
     thinking: "high",
+    effectivePermission: "full_access",
+    nativeSubagents: [
+      {
+        name: "runtime",
+        description: "Audit runtime behavior.",
+        prompt: "Inspect runtime code and report evidence.",
+        tools: ["Read", "Grep", "Glob"],
+        model: "inherit",
+      },
+      {
+        name: "tests",
+        description: "Audit tests and regressions.",
+        prompt: "Inspect tests and report missing coverage.",
+        tools: ["Read", "Grep", "Glob"],
+        model: undefined,
+      },
+      {
+        name: "isolated",
+        description: "Answer without tools.",
+        prompt: "Return a concise independent assessment.",
+        tools: [],
+        model: undefined,
+      },
+    ],
   });
 
   await writeFile(
@@ -94,7 +254,10 @@ try {
     ].join("\n"),
   );
   const profilesWithInvalid = await loadLocalAgentProfiles(enabledConfig, workspaceRoot);
-  assert.deepEqual(profilesWithInvalid.map((profile) => profile.name), ["reviewer"]);
+  assert.deepEqual(
+    profilesWithInvalid.map((profile) => profile.qualifiedName),
+    ["project:reviewer", "user:reviewer"],
+  );
 
   const disabledConfig = loadConfig({
     DEVSPACE_CONFIG_DIR: configDir,
