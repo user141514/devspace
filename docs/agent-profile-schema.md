@@ -150,9 +150,10 @@ second permission layer inside the provider adapter.
 `allowedTools` in the Claude SDK is an auto-approval list, not an availability
 whitelist. Each native `agents` entry requires `description` and `prompt`.
 `tools` defines that native worker's available capabilities and defaults to the
-read-oriented set `Read, Grep, Glob`; it is not a DevSpace sandbox or a claim
-that the outer Claude session is read-only. Use `tools: []` for a subagent with
-no tools. `model` is an optional Claude model alias or id. DevSpace accepts at
+read-oriented set `Read, Grep, Glob, WebSearch, WebFetch`. This permits local
+inspection and Internet research while still omitting local mutation tools and
+`Bash`. It is not a DevSpace sandbox or a claim that the outer Claude session is
+read-only. Use `tools: []` for a subagent with no tools. `model` is an optional Claude model alias or id. DevSpace accepts at
 most 16 programmatic agents per profile and rejects unknown fields, duplicate
 tools, invalid names, and empty required strings.
 

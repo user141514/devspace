@@ -184,7 +184,7 @@ try {
       tests: {
         description: "Audit tests and regressions.",
         prompt: "Inspect tests and report missing coverage.",
-        tools: ["Read", "Grep", "Glob"],
+        tools: ["Read", "Grep", "Glob", "WebSearch", "WebFetch"],
       },
       isolated: {
         description: "Answer without tools.",
@@ -227,7 +227,7 @@ try {
         name: "tests",
         description: "Audit tests and regressions.",
         prompt: "Inspect tests and report missing coverage.",
-        tools: ["Read", "Grep", "Glob"],
+        tools: ["Read", "Grep", "Glob", "WebSearch", "WebFetch"],
         model: undefined,
       },
       {

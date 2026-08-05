@@ -70,7 +70,13 @@ interface ParsedFrontmatter {
 const FRONTMATTER_DELIMITER = "---";
 const PROVIDERS = new Set<LocalAgentProvider>(LOCAL_AGENT_PROVIDERS);
 const CLAUDE_AGENT_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
-const DEFAULT_CLAUDE_SUBAGENT_TOOLS = ["Read", "Grep", "Glob"];
+const DEFAULT_CLAUDE_SUBAGENT_TOOLS = [
+  "Read",
+  "Grep",
+  "Glob",
+  "WebSearch",
+  "WebFetch",
+];
 const MAX_CLAUDE_NATIVE_SUBAGENTS = 16;
 
 export async function loadLocalAgentProfiles(
