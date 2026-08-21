@@ -56,10 +56,12 @@ import { createWorkspaceStore } from "./workspace-store.js";
 import { formatAgentsPath, WorkspaceRegistry } from "./workspaces.js";
 import { summarizeLocalAgentProfile } from "./local-agent-profiles.js";
 import {
+  assertLocalAgentProviderAvailable,
   formatLocalAgentProviderAvailabilitySummary,
   getLocalAgentProviderAvailabilitySnapshot,
   type LocalAgentProviderAvailability,
 } from "./local-agent-availability.js";
+import { PiBatchManager } from "./pi-batch.js";
 
 type Transport = StreamableHTTPServerTransport;
 // MCP clients can reconnect without closing the previous transport. Bound stale
@@ -272,6 +274,19 @@ const workspaceLocalNativeSubagentOutputSchema = z.object({
   prompt: z.string(),
   tools: z.array(z.string()),
   model: z.string().optional(),
+});
+
+const piBatchWorkerStatusSchema = z.enum(["running", "completed", "error"]);
+const piBatchStatusSchema = z.enum(["running", "completed"]);
+const piBatchWorkerSummaryOutputSchema = z.object({
+  id: z.string(),
+  status: piBatchWorkerStatusSchema,
+});
+const piBatchWorkerResultOutputSchema = z.object({
+  id: z.string(),
+  status: piBatchWorkerStatusSchema,
+  result: z.string().optional(),
+  error: z.string().optional(),
 });
 
 const workspaceLocalAgentOutputSchema = z.object({
@@ -721,6 +736,102 @@ function registerCodexProcessTools(
   );
 }
 
+export function registerPiBatchTools(
+  server: McpServer,
+  workspaces: { getWorkspace(workspaceId: string): { root: string } },
+  piBatches: PiBatchManager,
+  assertPiAvailable: () => void = () => assertLocalAgentProviderAvailable("pi"),
+): void {
+  registerAppTool(
+    server,
+    "pi_batch_start",
+    {
+      title: "Start Pi batch",
+      description:
+        "Launch 1-8 independent Pi workers concurrently in one workspace. Workers are hard read-only and may inspect broadly; the host must judge and fan in their answers.",
+      inputSchema: {
+        workspaceId: z.string(),
+        tasks: z
+          .array(z.object({
+            id: z.string().min(1),
+            prompt: z.string().min(1),
+          }))
+          .min(1)
+          .max(8),
+      },
+      outputSchema: {
+        batchId: z.string(),
+        status: piBatchStatusSchema,
+        workers: z.array(piBatchWorkerSummaryOutputSchema),
+      },
+      _meta: {},
+      annotations: { readOnlyHint: true },
+    },
+    async ({ workspaceId, tasks }) => {
+      assertPiAvailable();
+      const workspace = workspaces.getWorkspace(workspaceId);
+      const result = piBatches.start(workspace.root, tasks);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(result) }],
+        structuredContent: { ...result },
+      };
+    },
+  );
+
+  registerAppTool(
+    server,
+    "pi_batch_status",
+    {
+      title: "Pi batch status",
+      description: "Return lifecycle state for one Pi batch without waiting or steering workers.",
+      inputSchema: {
+        batchId: z.string().min(1),
+      },
+      outputSchema: {
+        batchId: z.string(),
+        status: piBatchStatusSchema,
+        workers: z.array(piBatchWorkerSummaryOutputSchema),
+      },
+      _meta: {},
+      annotations: { readOnlyHint: true },
+    },
+    async ({ batchId }) => {
+      const result = piBatches.status(batchId);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(result) }],
+        structuredContent: { ...result },
+      };
+    },
+  );
+
+  registerAppTool(
+    server,
+    "pi_batch_results",
+    {
+      title: "Pi batch results",
+      description:
+        "Return current final result or error fields for one Pi batch without summarizing or combining worker answers.",
+      inputSchema: {
+        batchId: z.string().min(1),
+      },
+      outputSchema: {
+        batchId: z.string(),
+        status: piBatchStatusSchema,
+        results: z.array(piBatchWorkerResultOutputSchema),
+      },
+      _meta: {},
+      annotations: { readOnlyHint: true },
+    },
+    async ({ batchId }) => {
+      const result = piBatches.results(batchId);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(result) }],
+        structuredContent: { ...result },
+      };
+    },
+  );
+}
+
 function createMcpServer(
   config: ServerConfig,
   workspaces: WorkspaceRegistry,
@@ -741,6 +852,9 @@ function createMcpServer(
       instructions: serverInstructions(config),
     },
   );
+  if (config.subagents) {
+    registerPiBatchTools(server, workspaces, new PiBatchManager());
+  }
 
   registerAppResource(
     server,

@@ -350,14 +350,22 @@ function selectAcpAllowPermissionOption(options: Array<{ optionId: string; kind:
   );
 }
 
+export function buildPiCommandArgs(input: LocalAgentRunInput): string[] {
+  const args = ["--mode", "rpc"];
+  if (input.writeMode === "read_only") {
+    args.push("--tools", "read,grep,find,ls");
+  }
+  if (input.model) args.push("--model", input.model);
+  if (input.thinking) args.push("--thinking", input.thinking);
+  if (input.providerSessionId) args.push("--session", input.providerSessionId);
+  return args;
+}
+
 class PiRpcLocalAgentAdapter implements LocalAgentAdapter {
   readonly provider = "pi" as const;
 
   async run(input: LocalAgentRunInput): Promise<LocalAgentRunResult> {
-    const args = ["--mode", "rpc"];
-    if (input.model) args.push("--model", input.model);
-    if (input.thinking) args.push("--thinking", input.thinking);
-    if (input.providerSessionId) args.push("--session", input.providerSessionId);
+    const args = buildPiCommandArgs(input);
     const child = spawn(process.env.PI_COMMAND ?? "pi", args, {
       cwd: input.workspace,
       env: piCommandEnvironment(process.env),

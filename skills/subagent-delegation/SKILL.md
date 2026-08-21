@@ -1,16 +1,18 @@
 ---
 name: subagent-delegation
-description: Delegate coding tasks to user-configured DevSpace subagents.
+description: Use when the user requests coding-agent delegation or when independent read-only Pi evidence work has clear parallel ROI.
 ---
 
 # Subagent Delegation
 
 Use this skill when the user explicitly asks to delegate work to another coding
-agent, use a named subagent, get a second opinion, compare approaches, or run
-a subagent-like workflow.
+agent, use a named subagent, get a second opinion, compare approaches, or when
+independent read-only Pi evidence work has clear parallel ROI.
 
-Do not use subagents silently. Tell the user when another subagent is
-being used.
+Read-only Pi evidence batches may be dispatched autonomously when the host judges
+that parallelism has clear ROI; disclose their use when reporting the result.
+Heavier, write-capable, or other second-model delegation keeps its existing
+authorization requirements.
 
 ## Core commands
 

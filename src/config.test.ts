@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "./config.js";
@@ -46,10 +46,27 @@ assert.equal(resolveSubagentsFlag({}, { DEVSPACE_SUBAGENTS: "1" }), true);
 
 const seededConfigDir = mkdtempSync(join(tmpdir(), "devspace-seeded-skills-test-"));
 const seededSkillPaths = ensureDevspaceDefaultSkills({ DEVSPACE_CONFIG_DIR: seededConfigDir });
-assert.deepEqual(seededSkillPaths, [join(seededConfigDir, "skills", "subagent-delegation", "SKILL.md")]);
-assert.equal(existsSync(seededSkillPaths[0]), true);
-assert.match(readFileSync(seededSkillPaths[0], "utf8"), /name: subagent-delegation/);
+const seededSubagentSkillPath = join(seededConfigDir, "skills", "subagent-delegation", "SKILL.md");
+const seededDevorderSkillPath = join(seededConfigDir, "skills", "devorder", "SKILL.md");
+assert.deepEqual(seededSkillPaths, [seededSubagentSkillPath, seededDevorderSkillPath]);
+assert.equal(existsSync(seededSubagentSkillPath), true);
+assert.equal(existsSync(seededDevorderSkillPath), true);
+assert.match(readFileSync(seededSubagentSkillPath, "utf8"), /name: subagent-delegation/);
+assert.match(readFileSync(seededDevorderSkillPath, "utf8"), /name: devorder/);
 assert.deepEqual(ensureDevspaceDefaultSkills({ DEVSPACE_CONFIG_DIR: seededConfigDir }), []);
+
+const partiallySeededConfigDir = mkdtempSync(join(tmpdir(), "devspace-partial-skills-test-"));
+const existingSubagentDir = join(partiallySeededConfigDir, "skills", "subagent-delegation");
+const existingSubagentPath = join(existingSubagentDir, "SKILL.md");
+const missingDevorderPath = join(partiallySeededConfigDir, "skills", "devorder", "SKILL.md");
+mkdirSync(existingSubagentDir, { recursive: true });
+writeFileSync(existingSubagentPath, "user-edited subagent skill\n");
+assert.deepEqual(
+  ensureDevspaceDefaultSkills({ DEVSPACE_CONFIG_DIR: partiallySeededConfigDir }),
+  [missingDevorderPath],
+);
+assert.equal(readFileSync(existingSubagentPath, "utf8"), "user-edited subagent skill\n");
+assert.match(readFileSync(missingDevorderPath, "utf8"), /name: devorder/);
 
 assert.throws(
   () => loadConfig({ ...baseEnv, DEVSPACE_WIDGETS: "invalid" }),

@@ -99,14 +99,20 @@ export function generateOwnerToken(): string {
   return randomBytes(32).toString("base64url");
 }
 
-export function ensureDevspaceDefaultSkills(env: NodeJS.ProcessEnv = process.env): string[] {
-  const targetPath = join(devspaceSkillsDir(env), "subagent-delegation", "SKILL.md");
-  if (existsSync(targetPath)) return [];
+const DEFAULT_DEVSPACE_SKILLS = ["subagent-delegation", "devorder"] as const;
 
-  const sourcePath = new URL("../skills/subagent-delegation/SKILL.md", import.meta.url);
-  mkdirSync(dirname(targetPath), { recursive: true });
-  writeFileSync(targetPath, readFileSync(sourcePath, "utf8"), { mode: 0o644 });
-  return [targetPath];
+export function ensureDevspaceDefaultSkills(env: NodeJS.ProcessEnv = process.env): string[] {
+  const created: string[] = [];
+  for (const name of DEFAULT_DEVSPACE_SKILLS) {
+    const targetPath = join(devspaceSkillsDir(env), name, "SKILL.md");
+    if (existsSync(targetPath)) continue;
+
+    const sourcePath = new URL(`../skills/${name}/SKILL.md`, import.meta.url);
+    mkdirSync(dirname(targetPath), { recursive: true });
+    writeFileSync(targetPath, readFileSync(sourcePath, "utf8"), { mode: 0o644 });
+    created.push(targetPath);
+  }
+  return created;
 }
 
 export function resolveSubagentsFlag(

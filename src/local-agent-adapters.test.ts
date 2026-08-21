@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { delimiter } from "node:path";
 import {
   buildClaudeQueryOptions,
+  buildPiCommandArgs,
   claudeCommandEnvironment,
   createLocalAgentAdapter,
   extractOpenCodeFinalResponse,
@@ -388,6 +389,24 @@ assert.equal(
     ],
   }),
   "(0 , _piAi.streamSimpleOpenAIResponses) is not a function",
+);
+
+assert.deepEqual(
+  buildPiCommandArgs({
+    prompt: "inspect",
+    workspace: "/tmp/workspace",
+    writeMode: "read_only",
+  }),
+  ["--mode", "rpc", "--tools", "read,grep,find,ls"],
+);
+
+assert.deepEqual(
+  buildPiCommandArgs({
+    prompt: "inspect",
+    workspace: "/tmp/workspace",
+    writeMode: "allowed",
+  }),
+  ["--mode", "rpc"],
 );
 
 assert.equal(
