@@ -14,9 +14,21 @@ that parallelism has clear ROI; disclose their use when reporting the result.
 Heavier, write-capable, or other second-model delegation keeps its existing
 authorization requirements.
 
-## Core commands
+## Pi batch routing
 
-Use only these commands for normal delegation:
+For two or more independent read-only Pi investigations with clear parallel ROI,
+use the MCP batch tools:
+
+- `pi_batch_start` — submit all independent Pi tasks in one batch call.
+- `pi_batch_status` — inspect worker lifecycle without waiting or steering.
+- `pi_batch_results` — collect current terminal results/errors for host fan-in.
+
+Do not serialize eligible Pi work through repeated `devspace agents run pi`
+calls. One read-only Pi task may use a one-item `pi_batch_start` batch.
+
+## Generic agent commands
+
+For heavier, write-capable, follow-up-session, or non-Pi delegation, use:
 
 ```bash
 devspace agents ls

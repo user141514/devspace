@@ -23,13 +23,17 @@ export interface SkillReadResolution {
 
 const SUBAGENT_DELEGATION_NAME = "subagent-delegation";
 const SUBAGENT_DELEGATION_SKILL = join(SUBAGENT_DELEGATION_NAME, "SKILL.md");
+const DEVORDER_SKILL = join("devorder", "SKILL.md");
 
 function bundledSkillsDir(): string {
   return fileURLToPath(new URL("../skills", import.meta.url));
 }
 
-function hasSubagentDelegationSkill(skillDir: string): boolean {
-  return existsSync(join(skillDir, SUBAGENT_DELEGATION_SKILL));
+function hasDevspaceDefaultSkills(skillDir: string): boolean {
+  return (
+    existsSync(join(skillDir, SUBAGENT_DELEGATION_SKILL)) &&
+    existsSync(join(skillDir, DEVORDER_SKILL))
+  );
 }
 
 export function effectiveSkillPaths(config: ServerConfig, cwd: string): string[] {
@@ -39,7 +43,7 @@ export function effectiveSkillPaths(config: ServerConfig, cwd: string): string[]
     resolve(cwd, ".agents", "skills"),
     config.devspaceSkillsDir,
     join(config.agentDir, "skills"),
-    config.subagents && !hasSubagentDelegationSkill(config.devspaceSkillsDir)
+    config.subagents && !hasDevspaceDefaultSkills(config.devspaceSkillsDir)
       ? bundledSkills
       : undefined,
   ];

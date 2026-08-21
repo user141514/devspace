@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
@@ -36,6 +36,7 @@ try {
   await mkdir(join(explicitSkills, "disabled"), { recursive: true });
   await mkdir(join(explicitSkills, "subagent-delegation"), { recursive: true });
   await mkdir(join(devspaceSkills, "devspace-local-skill"), { recursive: true });
+  await mkdir(join(devspaceSkills, "subagent-delegation"), { recursive: true });
 
   await writeFile(
     join(globalAgentsSkills, "agent-global-skill", "SKILL.md"),
@@ -101,6 +102,17 @@ try {
       "---",
       "",
       "# DevSpace Local Skill",
+    ].join("\n"),
+  );
+  await writeFile(
+    join(devspaceSkills, "subagent-delegation", "SKILL.md"),
+    [
+      "---",
+      "name: subagent-delegation",
+      "description: Local subagent delegation skill.",
+      "---",
+      "",
+      "# Local Subagent Delegation",
     ].join("\n"),
   );
   await writeFile(
@@ -202,12 +214,21 @@ try {
     DEVSPACE_OAUTH_OWNER_TOKEN: "test-owner-token-that-is-long-enough",
     PORT: "1",
   });
+  const experimentalSkills = loadWorkspaceSkills(experimentalConfig, projectRoot).skills;
   assert.equal(
-    loadWorkspaceSkills(experimentalConfig, projectRoot).skills.some(
-      (skill) => skill.name === "subagent-delegation",
-    ),
+    experimentalSkills.some((skill) => skill.name === "subagent-delegation"),
     true,
   );
+  assert.equal(experimentalSkills.some((skill) => skill.name === "devorder"), true);
+
+  const bundledDelegationSkill = await readFile(
+    new URL("../skills/subagent-delegation/SKILL.md", import.meta.url),
+    "utf8",
+  );
+  assert.match(bundledDelegationSkill, /pi_batch_start/);
+  assert.match(bundledDelegationSkill, /pi_batch_status/);
+  assert.match(bundledDelegationSkill, /pi_batch_results/);
+  assert.match(bundledDelegationSkill, /Do not serialize .*agents run pi/s);
 
   const duplicateConfig = loadConfig({
     DEVSPACE_ALLOWED_ROOTS: projectRoot,
