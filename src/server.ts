@@ -44,6 +44,7 @@ import { openAiConversationScopeId } from "./request-meta.js";
 import { shutdownHttpServer } from "./server-shutdown.js";
 import { formatPathForPrompt } from "./skills.js";
 import { createWorkspaceStore } from "./workspace-store.js";
+import { resolveHostWorkerCapabilities } from "./host-worker-types.js";
 import { formatAgentsPath, WorkspaceRegistry } from "./workspaces.js";
 import {
   getLocalAgentProviderAvailabilitySnapshot,
@@ -535,6 +536,33 @@ export function createMcpServer(
             : {}),
           instruction,
         },
+      };
+    },
+  );
+
+  server.registerTool(
+    "host_workers_capabilities",
+    {
+      title: "Host worker capabilities",
+      description:
+        "Report whether the current MCP host supports host-native worker sampling, sampling tools, and task-backed background sampling.",
+      inputSchema: {},
+      outputSchema: {
+        sampling: z.boolean(),
+        tools: z.boolean(),
+        taskSampling: z.boolean(),
+        background: z.boolean(),
+        maxConcurrency: z.number().int().positive(),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    async () => {
+      const capabilities = resolveHostWorkerCapabilities(server.server.getClientCapabilities());
+      return {
+        content: [textBlock(
+          `Host workers: sampling=${capabilities.sampling}, tools=${capabilities.tools}, taskSampling=${capabilities.taskSampling}, background=${capabilities.background}, maxConcurrency=${capabilities.maxConcurrency}`,
+        )],
+        structuredContent: capabilities,
       };
     },
   );

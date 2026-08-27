@@ -7,6 +7,7 @@ import test, { type TestContext } from "node:test";
 import { promisify } from "node:util";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import type { ClientCapabilities } from "@modelcontextprotocol/sdk/types.js";
 import { loadConfig, type ServerConfig, type ToolMode } from "./config.js";
 import type { LocalAgentProviderAvailability } from "./local-agent-availability.js";
 import { buildLocalAgentProviderStatuses } from "./local-agent-catalog.js";
@@ -27,11 +28,11 @@ test("tool modes expose the expected host-facing tool surface", async (t) => {
   }> = [
     {
       mode: "claude",
-      expected: ["open_workspace", "read", "write", "edit", "bash", "show_changes"],
+      expected: ["open_workspace", "read", "write", "edit", "bash", "show_changes", "host_workers_capabilities"],
     },
     {
       mode: "codex",
-      expected: ["open_workspace", "read", "apply_patch", "exec_command", "write_stdin", "show_changes"],
+      expected: ["open_workspace", "read", "apply_patch", "exec_command", "write_stdin", "show_changes", "host_workers_capabilities"],
     },
   ];
 
@@ -46,6 +47,36 @@ test("tool modes expose the expected host-facing tool surface", async (t) => {
       );
     });
   }
+});
+
+test("host worker capability tool reflects client advertised sampling capabilities", async (t) => {
+  const context = await fixture(t, {
+    clientCapabilities: {
+      sampling: { tools: {} },
+      tasks: {
+        requests: {
+          sampling: {
+            createMessage: {},
+          },
+        },
+      },
+    },
+  });
+
+  const tools = await context.client.listTools();
+  assert.equal(tools.tools.some((tool) => tool.name === "host_workers_capabilities"), true);
+
+  const result = structuredContent(await context.client.callTool({
+    name: "host_workers_capabilities",
+    arguments: {},
+  }));
+  assert.deepEqual(result, {
+    sampling: true,
+    tools: true,
+    taskSampling: true,
+    background: true,
+    maxConcurrency: 4,
+  });
 });
 
 test("UI metadata is limited to workspace and aggregate review", async (t) => {
@@ -398,6 +429,7 @@ async function fixture(
     subagents?: SubagentsConfig;
     toolMode?: ToolMode;
     uiEnabled?: boolean;
+    clientCapabilities?: ClientCapabilities;
   } = {},
 ): Promise<ServerFixture> {
   const root = await mkdtemp(join(tmpdir(), "devspace-server-test-"));
@@ -473,6 +505,7 @@ async function fixture(
   );
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "devspace-test-client", version: "1.0.0" });
+  if (options.clientCapabilities) client.registerCapabilities(options.clientCapabilities);
   await Promise.all([
     client.connect(clientTransport),
     server.connect(serverTransport),
