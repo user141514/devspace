@@ -45,6 +45,7 @@ import { shutdownHttpServer } from "./server-shutdown.js";
 import { formatPathForPrompt } from "./skills.js";
 import { createWorkspaceStore } from "./workspace-store.js";
 import { HostWorkerManager } from "./host-worker-manager.js";
+import { HostWorkerRuntime } from "./host-worker-runtime.js";
 import { resolveHostWorkerCapabilities } from "./host-worker-types.js";
 import { formatAgentsPath, WorkspaceRegistry } from "./workspaces.js";
 import {
@@ -303,6 +304,7 @@ export function createMcpServer(
   );
   const hostWorkers = new HostWorkerManager(
     () => resolveHostWorkerCapabilities(server.server.getClientCapabilities()),
+    new HostWorkerRuntime(server),
   );
   const hostWorkerSnapshotOutputSchema = {
     id: z.string(),
@@ -609,6 +611,28 @@ export function createMcpServer(
       });
       return {
         content: [textBlock(`Created host worker ${snapshot.id}.`)],
+        structuredContent: snapshot,
+      };
+    },
+  );
+
+  server.registerTool(
+    "host_worker_send",
+    {
+      title: "Send host worker message",
+      description:
+        "Send a follow-up message to a host-native worker and wait for that worker turn to complete using the current MCP host's sampling capability.",
+      inputSchema: {
+        workerId: z.string(),
+        message: z.string().trim().min(1),
+      },
+      outputSchema: hostWorkerSnapshotOutputSchema,
+      annotations: { readOnlyHint: true },
+    },
+    async ({ workerId, message }) => {
+      const snapshot = await hostWorkers.send(workerId, message);
+      return {
+        content: [textBlock(snapshot.finalResponse ?? `Host worker ${snapshot.id}: ${snapshot.status}.`)],
         structuredContent: snapshot,
       };
     },

@@ -78,3 +78,55 @@ test("worker ids are isolated between manager instances", () => {
 
   assert.throws(() => managerB.get(workerA.id), /worker_not_found/);
 });
+
+test("send preserves one worker context across follow-up turns", async () => {
+  const observed: Array<{ historyLength: number; message: string }> = [];
+  let manager: HostWorkerManager;
+  let workerId = "";
+  const runtime = {
+    runTurn: async (input: { history: unknown[]; message: string }) => {
+      observed.push({ historyLength: input.history.length, message: input.message });
+      assert.equal(manager.get(workerId).status, "running");
+      const turn = observed.length;
+      return {
+        finalResponse: `response-${turn}`,
+        history: turn === 1
+          ? [
+              { role: "user" as const, content: { type: "text" as const, text: "first" } },
+              { role: "assistant" as const, content: { type: "text" as const, text: "response-1" } },
+            ]
+          : [
+              { role: "user" as const, content: { type: "text" as const, text: "first" } },
+              { role: "assistant" as const, content: { type: "text" as const, text: "response-1" } },
+              { role: "user" as const, content: { type: "text" as const, text: "second" } },
+              { role: "assistant" as const, content: { type: "text" as const, text: "response-2" } },
+            ],
+      };
+    },
+  };
+  manager = new HostWorkerManager(capabilities, runtime);
+  const worker = manager.create(createInput());
+  workerId = worker.id;
+
+  const first = await manager.send(worker.id, "first");
+  assert.equal(first.status, "completed");
+  assert.equal(first.finalResponse, "response-1");
+
+  const second = await manager.send(worker.id, "second");
+  assert.equal(second.status, "completed");
+  assert.equal(second.finalResponse, "response-2");
+  assert.deepEqual(observed, [
+    { historyLength: 0, message: "first" },
+    { historyLength: 2, message: "second" },
+  ]);
+});
+
+test("cancelled workers reject follow-up sends", async () => {
+  const manager = new HostWorkerManager(capabilities, {
+    runTurn: async () => ({ finalResponse: "unused", history: [] }),
+  });
+  const worker = manager.create(createInput());
+  manager.cancel(worker.id);
+
+  await assert.rejects(() => manager.send(worker.id, "continue"), /worker_cancelled/);
+});

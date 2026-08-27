@@ -7,7 +7,11 @@ import test, { type TestContext } from "node:test";
 import { promisify } from "node:util";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import type { ClientCapabilities } from "@modelcontextprotocol/sdk/types.js";
+import {
+  CreateMessageRequestSchema,
+  type ClientCapabilities,
+  type SamplingMessage,
+} from "@modelcontextprotocol/sdk/types.js";
 import { loadConfig, type ServerConfig, type ToolMode } from "./config.js";
 import type { LocalAgentProviderAvailability } from "./local-agent-availability.js";
 import { buildLocalAgentProviderStatuses } from "./local-agent-catalog.js";
@@ -28,11 +32,11 @@ test("tool modes expose the expected host-facing tool surface", async (t) => {
   }> = [
     {
       mode: "claude",
-      expected: ["open_workspace", "read", "write", "edit", "bash", "show_changes", "host_workers_capabilities", "host_worker_create", "host_worker_get", "host_worker_cancel"],
+      expected: ["open_workspace", "read", "write", "edit", "bash", "show_changes", "host_workers_capabilities", "host_worker_create", "host_worker_send", "host_worker_get", "host_worker_cancel"],
     },
     {
       mode: "codex",
-      expected: ["open_workspace", "read", "apply_patch", "exec_command", "write_stdin", "show_changes", "host_workers_capabilities", "host_worker_create", "host_worker_get", "host_worker_cancel"],
+      expected: ["open_workspace", "read", "apply_patch", "exec_command", "write_stdin", "show_changes", "host_workers_capabilities", "host_worker_create", "host_worker_send", "host_worker_get", "host_worker_cancel"],
     },
   ];
 
@@ -118,6 +122,49 @@ test("host worker objects are scoped to the MCP session that created them", asyn
   }));
   assert.equal(cancelled.status, "cancelled");
   assert.equal(typeof cancelled.completedAt, "string");
+});
+
+test("host worker send uses session sampling and preserves follow-up context", async (t) => {
+  const context = await fixture(t, { clientCapabilities: { sampling: {} } });
+  const observed: SamplingMessage[][] = [];
+  context.client.setRequestHandler(CreateMessageRequestSchema, async (request) => {
+    observed.push(request.params.messages);
+    return {
+      model: "test-model",
+      role: "assistant",
+      content: { type: "text", text: `server-response-${observed.length}` },
+      stopReason: "endTurn",
+    };
+  });
+
+  const workspaceId = structuredContent(await callOpen(context.client, context.project, "host-send")).workspaceId;
+  assert.equal(typeof workspaceId, "string");
+  const created = structuredContent(await context.client.callTool({
+    name: "host_worker_create",
+    arguments: { workspaceId, goal: "Inspect the runtime." },
+  }));
+  const workerId = created.id as string;
+
+  const first = structuredContent(await context.client.callTool({
+    name: "host_worker_send",
+    arguments: { workerId, message: "Inspect shutdown." },
+  }));
+  assert.equal(first.status, "completed");
+  assert.equal(first.finalResponse, "server-response-1");
+
+  const second = structuredContent(await context.client.callTool({
+    name: "host_worker_send",
+    arguments: { workerId, message: "Now inspect restart." },
+  }));
+  assert.equal(second.status, "completed");
+  assert.equal(second.finalResponse, "server-response-2");
+  assert.equal(observed.length, 2);
+  assert.equal(observed[0].length, 1);
+  assert.equal(observed[1].length, 3);
+  assert.equal(observed[1][1].role, "assistant");
+  const previousResponse = observed[1][1].content;
+  assert.equal(Array.isArray(previousResponse), false);
+  assert.equal((previousResponse as { type: "text"; text: string }).text, "server-response-1");
 });
 
 test("UI metadata is limited to workspace and aggregate review", async (t) => {

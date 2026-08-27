@@ -1,4 +1,9 @@
 import { randomUUID } from "node:crypto";
+import type { SamplingMessage } from "@modelcontextprotocol/sdk/types.js";
+import type {
+  HostWorkerRunTurnInput,
+  HostWorkerRunTurnResult,
+} from "./host-worker-runtime.js";
 import type {
   HostWorkerCapabilities,
   HostWorkerCreateInput,
@@ -6,9 +11,14 @@ import type {
   HostWorkerStatus,
 } from "./host-worker-types.js";
 
+interface HostWorkerTurnRuntime {
+  runTurn(input: HostWorkerRunTurnInput): Promise<HostWorkerRunTurnResult>;
+}
+
 interface HostWorkerRecord {
   input: HostWorkerCreateInput;
   snapshot: HostWorkerSnapshot;
+  history: SamplingMessage[];
   abortController: AbortController;
 }
 
@@ -17,7 +27,10 @@ export class HostWorkerManager {
   private closed = false;
   private readonly resolveCapabilities: () => HostWorkerCapabilities;
 
-  constructor(capabilities: HostWorkerCapabilities | (() => HostWorkerCapabilities)) {
+  constructor(
+    capabilities: HostWorkerCapabilities | (() => HostWorkerCapabilities),
+    private readonly runtime?: HostWorkerTurnRuntime,
+  ) {
     this.resolveCapabilities = typeof capabilities === "function" ? capabilities : () => capabilities;
   }
 
@@ -43,9 +56,53 @@ export class HostWorkerManager {
         constraints: input.constraints ? [...input.constraints] : undefined,
       },
       snapshot,
+      history: [],
       abortController: new AbortController(),
     });
     return cloneSnapshot(snapshot);
+  }
+
+  async send(id: string, message: string): Promise<HostWorkerSnapshot> {
+    this.assertOpen();
+    const worker = this.requireWorker(id);
+    if (worker.snapshot.status === "cancelled") throw new Error("worker_cancelled");
+    if (worker.snapshot.status === "failed") throw new Error("worker_failed");
+    if (worker.snapshot.status === "queued" || worker.snapshot.status === "running") {
+      throw new Error("worker_busy");
+    }
+    if (!this.runtime) throw new Error("sampling_runtime_unavailable");
+
+    worker.abortController = new AbortController();
+    worker.snapshot.status = "queued";
+    worker.snapshot.startedAt = new Date().toISOString();
+    delete worker.snapshot.completedAt;
+    delete worker.snapshot.error;
+    delete worker.snapshot.finalResponse;
+    worker.snapshot.status = "running";
+
+    try {
+      const result = await this.runtime.runTurn({
+        taskPacket: buildTaskPacket(worker.input),
+        history: worker.history,
+        message,
+        signal: worker.abortController.signal,
+      });
+      worker.history = result.history;
+      worker.snapshot.finalResponse = result.finalResponse;
+      worker.snapshot.status = "completed";
+      worker.snapshot.completedAt = new Date().toISOString();
+      return cloneSnapshot(worker.snapshot);
+    } catch (error) {
+      if (worker.abortController.signal.aborted) {
+        worker.snapshot.status = "cancelled";
+        worker.snapshot.error ??= "worker_cancelled";
+      } else {
+        worker.snapshot.status = "failed";
+        worker.snapshot.error = error instanceof Error ? error.message : String(error);
+      }
+      worker.snapshot.completedAt ??= new Date().toISOString();
+      throw error;
+    }
   }
 
   get(id: string): HostWorkerSnapshot {
@@ -91,4 +148,18 @@ function isTerminal(status: HostWorkerStatus): boolean {
 
 function cloneSnapshot(snapshot: HostWorkerSnapshot): HostWorkerSnapshot {
   return { ...snapshot };
+}
+
+function buildTaskPacket(input: HostWorkerCreateInput): string {
+  const lines = [
+    `Goal: ${input.goal}`,
+    `Workspace: ${input.workspaceRoot}`,
+    ...(input.context ? [`Context: ${input.context}`] : []),
+    ...(input.constraints?.length
+      ? ["Constraints:", ...input.constraints.map((constraint) => `- ${constraint}`)]
+      : []),
+    ...(input.expectedOutput ? [`Expected output: ${input.expectedOutput}`] : []),
+    "Policy: inspect only. Distinguish repository evidence from inference.",
+  ];
+  return lines.join("\n");
 }
