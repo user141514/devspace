@@ -24,6 +24,13 @@ interface HostWorkerRecord {
 
 export class HostWorkerManager {
   private readonly workers = new Map<string, HostWorkerRecord>();
+  private readonly turnWaiters: Array<{
+    signal: AbortSignal;
+    start: () => void;
+    reject: (error: Error) => void;
+    onAbort: () => void;
+  }> = [];
+  private activeTurns = 0;
   private closed = false;
   private readonly resolveCapabilities: () => HostWorkerCapabilities;
 
@@ -78,9 +85,12 @@ export class HostWorkerManager {
     delete worker.snapshot.completedAt;
     delete worker.snapshot.error;
     delete worker.snapshot.finalResponse;
-    worker.snapshot.status = "running";
 
+    let releasePermit: (() => void) | undefined;
     try {
+      releasePermit = await this.acquireTurnPermit(worker.abortController.signal);
+      if (worker.abortController.signal.aborted) throw new Error("worker_cancelled");
+      worker.snapshot.status = "running";
       const result = await this.runtime.runTurn({
         taskPacket: buildTaskPacket(worker.input),
         history: worker.history,
@@ -102,7 +112,22 @@ export class HostWorkerManager {
       }
       worker.snapshot.completedAt ??= new Date().toISOString();
       throw error;
+    } finally {
+      releasePermit?.();
     }
+  }
+
+  async sendBatch(
+    sends: Array<{ workerId: string; message: string }>,
+  ): Promise<HostWorkerSnapshot[]> {
+    this.assertOpen();
+    if (sends.length > 8) throw new Error("host_worker_batch_limit: maximum 8 sends");
+    const seen = new Set<string>();
+    for (const send of sends) {
+      if (seen.has(send.workerId)) throw new Error(`duplicate_worker_id: ${send.workerId}`);
+      seen.add(send.workerId);
+    }
+    return Promise.all(sends.map((send) => this.send(send.workerId, send.message)));
   }
 
   get(id: string): HostWorkerSnapshot {
@@ -133,6 +158,64 @@ export class HostWorkerManager {
 
   private assertOpen(): void {
     if (this.closed) throw new Error("transport_closed");
+  }
+
+  private acquireTurnPermit(signal: AbortSignal): Promise<() => void> {
+    if (signal.aborted) return Promise.reject(new Error("worker_cancelled"));
+    const maxConcurrency = Math.max(1, this.resolveCapabilities().maxConcurrency);
+    if (this.activeTurns < maxConcurrency) {
+      this.activeTurns += 1;
+      return Promise.resolve(this.createPermitRelease());
+    }
+
+    return new Promise((resolve, reject) => {
+      const waiter = {
+        signal,
+        reject,
+        onAbort: () => undefined,
+        start: () => undefined,
+      };
+      waiter.onAbort = () => {
+        const index = this.turnWaiters.indexOf(waiter);
+        if (index >= 0) this.turnWaiters.splice(index, 1);
+        reject(new Error("worker_cancelled"));
+      };
+      waiter.start = () => {
+        signal.removeEventListener("abort", waiter.onAbort);
+        if (signal.aborted) {
+          reject(new Error("worker_cancelled"));
+          this.drainTurnWaiters();
+          return;
+        }
+        this.activeTurns += 1;
+        resolve(this.createPermitRelease());
+      };
+      signal.addEventListener("abort", waiter.onAbort, { once: true });
+      this.turnWaiters.push(waiter);
+    });
+  }
+
+  private createPermitRelease(): () => void {
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.activeTurns = Math.max(0, this.activeTurns - 1);
+      this.drainTurnWaiters();
+    };
+  }
+
+  private drainTurnWaiters(): void {
+    const maxConcurrency = Math.max(1, this.resolveCapabilities().maxConcurrency);
+    while (this.activeTurns < maxConcurrency && this.turnWaiters.length > 0) {
+      const waiter = this.turnWaiters.shift()!;
+      if (waiter.signal.aborted) {
+        waiter.signal.removeEventListener("abort", waiter.onAbort);
+        waiter.reject(new Error("worker_cancelled"));
+        continue;
+      }
+      waiter.start();
+    }
   }
 
   private requireWorker(id: string): HostWorkerRecord {

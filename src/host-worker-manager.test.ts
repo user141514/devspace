@@ -130,3 +130,56 @@ test("cancelled workers reject follow-up sends", async () => {
 
   await assert.rejects(() => manager.send(worker.id, "continue"), /worker_cancelled/);
 });
+
+test("sendBatch limits active worker turns to four and preserves result order", async () => {
+  let active = 0;
+  let peak = 0;
+  const manager = new HostWorkerManager(capabilities, {
+    runTurn: async ({ message }) => {
+      active += 1;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) => setTimeout(resolve, 15));
+      active -= 1;
+      return {
+        finalResponse: `done:${message}`,
+        history: [],
+      };
+    },
+  });
+  const workers = Array.from({ length: 8 }, (_, index) => manager.create({
+    ...createInput(),
+    key: `worker-${index}`,
+  }));
+
+  const results = await manager.sendBatch(
+    workers.map((worker, index) => ({ workerId: worker.id, message: `task-${index}` })),
+  );
+
+  assert.equal(peak, 4);
+  assert.deepEqual(
+    results.map((result) => result.finalResponse),
+    Array.from({ length: 8 }, (_, index) => `done:task-${index}`),
+  );
+});
+
+test("sendBatch rejects more than eight sends and duplicate worker ids", async () => {
+  const manager = new HostWorkerManager(capabilities, {
+    runTurn: async ({ message }) => ({ finalResponse: message, history: [] }),
+  });
+  const worker = manager.create(createInput());
+
+  await assert.rejects(
+    () => manager.sendBatch(Array.from({ length: 9 }, (_, index) => ({
+      workerId: worker.id,
+      message: `task-${index}`,
+    }))),
+    /host_worker_batch_limit/,
+  );
+  await assert.rejects(
+    () => manager.sendBatch([
+      { workerId: worker.id, message: "a" },
+      { workerId: worker.id, message: "b" },
+    ]),
+    /duplicate_worker_id/,
+  );
+});

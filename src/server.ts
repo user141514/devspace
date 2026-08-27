@@ -639,6 +639,32 @@ export function createMcpServer(
   );
 
   server.registerTool(
+    "host_workers_send_batch",
+    {
+      title: "Send host worker batch",
+      description:
+        "Send messages to multiple existing host-native workers concurrently. This is a bounded execution primitive only; the MCP host remains responsible for routing and orchestration.",
+      inputSchema: {
+        sends: z.array(z.object({
+          workerId: z.string(),
+          message: z.string().trim().min(1),
+        })).min(1).max(8),
+      },
+      outputSchema: {
+        results: z.array(z.object(hostWorkerSnapshotOutputSchema)),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ sends }) => {
+      const results = await hostWorkers.sendBatch(sends);
+      return {
+        content: [textBlock(`Completed ${results.length} host worker sends.`)],
+        structuredContent: { results },
+      };
+    },
+  );
+
+  server.registerTool(
     "host_worker_get",
     {
       title: "Get host worker",

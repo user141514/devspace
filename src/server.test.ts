@@ -32,11 +32,11 @@ test("tool modes expose the expected host-facing tool surface", async (t) => {
   }> = [
     {
       mode: "claude",
-      expected: ["open_workspace", "read", "write", "edit", "bash", "show_changes", "host_workers_capabilities", "host_worker_create", "host_worker_send", "host_worker_get", "host_worker_cancel"],
+      expected: ["open_workspace", "read", "write", "edit", "bash", "show_changes", "host_workers_capabilities", "host_worker_create", "host_worker_send", "host_workers_send_batch", "host_worker_get", "host_worker_cancel"],
     },
     {
       mode: "codex",
-      expected: ["open_workspace", "read", "apply_patch", "exec_command", "write_stdin", "show_changes", "host_workers_capabilities", "host_worker_create", "host_worker_send", "host_worker_get", "host_worker_cancel"],
+      expected: ["open_workspace", "read", "apply_patch", "exec_command", "write_stdin", "show_changes", "host_workers_capabilities", "host_worker_create", "host_worker_send", "host_workers_send_batch", "host_worker_get", "host_worker_cancel"],
     },
   ];
 
@@ -165,6 +165,59 @@ test("host worker send uses session sampling and preserves follow-up context", a
   const previousResponse = observed[1][1].content;
   assert.equal(Array.isArray(previousResponse), false);
   assert.equal((previousResponse as { type: "text"; text: string }).text, "server-response-1");
+});
+
+test("host worker batch sends execute concurrently and preserve worker result order", async (t) => {
+  const context = await fixture(t, { clientCapabilities: { sampling: {} } });
+  let active = 0;
+  let peak = 0;
+  context.client.setRequestHandler(CreateMessageRequestSchema, async (request) => {
+    active += 1;
+    peak = Math.max(peak, active);
+    const last = request.params.messages.at(-1);
+    const content = last?.content;
+    assert.ok(content && !Array.isArray(content) && content.type === "text");
+    const marker = content.text.includes("first-batch-task") ? "first" : "second";
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    active -= 1;
+    return {
+      model: "test-model",
+      role: "assistant",
+      content: { type: "text", text: `${marker}-batch-response` },
+      stopReason: "endTurn",
+    };
+  });
+
+  const workspaceId = structuredContent(await callOpen(context.client, context.project, "host-batch")).workspaceId;
+  assert.equal(typeof workspaceId, "string");
+  const first = structuredContent(await context.client.callTool({
+    name: "host_worker_create",
+    arguments: { workspaceId, goal: "Inspect runtime." },
+  }));
+  const second = structuredContent(await context.client.callTool({
+    name: "host_worker_create",
+    arguments: { workspaceId, goal: "Inspect tests." },
+  }));
+
+  const batch = structuredContent(await context.client.callTool({
+    name: "host_workers_send_batch",
+    arguments: {
+      sends: [
+        { workerId: first.id, message: "first-batch-task" },
+        { workerId: second.id, message: "second-batch-task" },
+      ],
+    },
+  }));
+
+  assert.equal(peak, 2);
+  assert.deepEqual(
+    (batch.results as Array<Record<string, unknown>>).map((result) => result.id),
+    [first.id, second.id],
+  );
+  assert.deepEqual(
+    (batch.results as Array<Record<string, unknown>>).map((result) => result.finalResponse),
+    ["first-batch-response", "second-batch-response"],
+  );
 });
 
 test("UI metadata is limited to workspace and aggregate review", async (t) => {
