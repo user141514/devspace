@@ -112,7 +112,7 @@ Workspace identity remains separate. Each task includes a `workspaceId`, resolve
 
 ## 7. Public MCP surface
 
-V1 uses a small batch-oriented surface rather than separate single-worker and batch APIs.
+V1 exposes worker objects and communication primitives. DevSpace does not expose routing, planning, dependency, coordinator, or DAG APIs for host-native workers; the MCP host owns those decisions.
 
 ### `host_workers_capabilities`
 
@@ -120,51 +120,61 @@ Returns the current MCP session's sampling/tool/task capabilities and DevSpace c
 
 It performs no model invocation.
 
-### `host_workers_run`
+### `host_worker_create`
 
-Runs one or more worker tasks and waits for completion.
+Creates one logical host worker bound to a workspace and returns its stable worker ID without invoking the model.
 
 Input shape:
 
 ```ts
-interface HostWorkersRunInput {
+interface HostWorkerCreateInput {
   workspaceId: string;
-  tasks: HostWorkerTask[];
-  requireTools?: boolean;
-}
-
-interface HostWorkerTask {
   key?: string;
   goal: string;
   context?: string;
   constraints?: string[];
   expectedOutput?: string;
+  requireTools?: boolean;
 }
 ```
 
-Semantics:
+Creation validates the workspace and required host capabilities. The worker starts in `idle` state with an isolated message history containing its task packet.
 
-- `tasks.length === 1` is the single-worker case.
-- Multiple tasks are scheduled concurrently up to the session limit.
-- If `requireTools` is true and `sampling.tools` is absent, fail before starting any worker.
-- This path does not require task-augmented sampling because the caller waits for results.
+### `host_worker_send`
 
-### `host_workers_start`
+Sends a message to an existing worker and waits for that worker turn to complete.
 
-Starts one or more background workers and returns DevSpace worker IDs without waiting for final completion.
+```ts
+interface HostWorkerSendInput {
+  workerId: string;
+  message: string;
+}
+```
 
-This tool is available in the schema but returns an explicit capability error unless task-augmented sampling is supported.
+The worker keeps its previous sampling/tool history, so this is a real follow-up in the same logical worker context rather than a new worker invocation.
 
-It must not emulate background execution with an untracked detached Promise when the host does not advertise the protocol capability.
+### `host_workers_send_batch`
 
-### `host_workers_get`
+A thin concurrency primitive that performs multiple `host_worker_send` operations concurrently up to the per-session concurrency limit.
 
-Reads status and terminal results for one or more DevSpace worker IDs.
+```ts
+interface HostWorkersSendBatchInput {
+  sends: Array<{
+    workerId: string;
+    message: string;
+  }>;
+}
+```
 
-A result contains:
+This is convenience only. It does not classify, route, decompose, or order tasks beyond bounded parallel scheduling.
+
+### `host_worker_get`
+
+Reads the current snapshot for one worker ID.
 
 ```ts
 type HostWorkerStatus =
+  | "idle"
   | "queued"
   | "running"
   | "completed"
@@ -174,7 +184,9 @@ type HostWorkerStatus =
 interface HostWorkerSnapshot {
   id: string;
   key?: string;
+  workspaceId: string;
   status: HostWorkerStatus;
+  createdAt: string;
   startedAt?: string;
   completedAt?: string;
   finalResponse?: string;
@@ -182,11 +194,15 @@ interface HostWorkerSnapshot {
 }
 ```
 
-### `host_workers_cancel`
+`completed` means the latest requested turn completed successfully. A completed worker may receive another `host_worker_send`, which transitions it back through queued/running and preserves its prior worker context.
 
-Cancels queued/running background workers when cancellation is possible and marks lifecycle state explicitly.
+### `host_worker_cancel`
 
-Cancellation is best-effort across the host protocol boundary but must always stop DevSpace from continuing the worker's local tool loop.
+Cancels a queued/running worker when possible and prevents further local tool-loop continuation. A cancelled worker does not accept additional sends.
+
+### Optional task-backed background send
+
+True call-now/fetch-later execution is an extension of `host_worker_send`, not a separate routing system. It is enabled only when task-augmented `sampling/createMessage` is advertised. V1 may expose this as `background: true` on send or a narrowly named background-send tool after the synchronous worker-object path is proven. DevSpace must not emulate background execution with an untracked detached Promise.
 
 ## 8. Worker task packet
 
@@ -238,47 +254,51 @@ The loop must preserve MCP tool-use/tool-result pairing exactly.
 
 ## 10. Concurrency and orchestration
 
-V1 default maximum concurrency is four active host workers per MCP session.
+V1 default maximum concurrency is four active host-worker turns per MCP session.
 
-`HostWorkerManager` owns:
+`HostWorkerManager` owns only execution mechanics:
 
-- queueing;
+- worker object creation and lookup;
+- bounded send queueing;
 - concurrency permits;
 - worker lifecycle state;
 - cancellation tokens;
-- task/result lookup;
+- worker message/result retention;
 - shutdown handling.
 
-The host remains responsible for decomposition and fan-in. DevSpace does not hide a planner inside the worker manager.
+The host owns all intelligence above those primitives: decomposition, routing, deciding which worker to contact, deciding when to ask a follow-up, cross-feeding findings between workers, and final fan-in. DevSpace does not hide a planner or router inside the worker manager.
 
-Example:
+The communication topology is intentionally host-centered:
 
 ```text
-Host
-  |
-  +-- worker A: inspect runtime architecture
-  +-- worker B: inspect tests and regression surface
-  +-- worker C: inspect security boundaries
-  |
-  +-- fan-in and decide next action
+           worker A
+              ^
+              |
+worker B <-> Host <-> worker C
+              |
+              v
+           worker D
 ```
 
-This is deliberately simpler than Orca. If tasks need dependency edges, blocking gates, worker-to-worker messaging, or multi-stage coordinator loops, the host should use Orca instead.
+Workers do not communicate directly in V1. If worker A's result should influence worker B, the host explicitly sends that evidence to worker B. This keeps coordination inspectable and prevents autonomous hidden worker conversations.
+
+This is deliberately simpler than Orca. If tasks need dependency edges, blocking gates, worker-to-worker messaging, publish/subscribe, or multi-stage coordinator loops, the host should use Orca instead.
 
 ## 11. Background semantics
 
-Background execution is protocol-driven, not simulated.
+Background execution is protocol-driven, not simulated, and is secondary to the worker-object/send contract.
 
-When the client advertises `tasks.requests.sampling.createMessage`, DevSpace uses the SDK task-augmented sampling path (`server.experimental.tasks.createMessageStream(...)` with task creation options).
+When the client advertises `tasks.requests.sampling.createMessage`, DevSpace may use the SDK task-augmented sampling path (`server.experimental.tasks.createMessageStream(...)` with task creation options) for a send that explicitly requests background execution.
 
-The manager maps a DevSpace worker ID to host-side task lifecycle data and continues draining task status/result events until terminal state.
+The manager maps the existing DevSpace worker ID to host-side task lifecycle data and continues draining task status/result events until the requested worker turn reaches terminal state. The same logical worker ID remains reusable for later follow-ups.
 
 A multi-turn tool-using worker may require more than one sampling request. DevSpace keeps one logical worker ID across those requests and remains `running` until the whole tool loop finishes.
 
 When task-augmented sampling is absent:
 
-- `host_workers_run` still provides concurrent fan-out while the caller waits;
-- `host_workers_start` returns a clear `background_not_supported` error;
+- normal `host_worker_send` remains available and waits for the worker turn;
+- `host_workers_send_batch` still provides concurrent fan-out while the caller waits;
+- any explicit background-send request returns `background_not_supported`;
 - DevSpace does not silently detach a normal sampling request and call it background work.
 
 ## 12. Error model
@@ -372,9 +392,11 @@ The implementation should not modify local-agent provider drivers unless a share
 ### Server contract tests
 
 - capability output reflects mocked MCP client capabilities;
-- `host_workers_run` requires sampling;
+- `host_worker_create` validates workspace and sampling requirements;
 - `requireTools` gates on `sampling.tools`;
-- `host_workers_start` gates on task-augmented sampling;
+- `host_worker_send` preserves one worker ID and context across follow-up turns;
+- `host_workers_send_batch` runs independent worker turns concurrently without routing logic;
+- any explicit background send gates on task-augmented sampling;
 - worker IDs are scoped to their MCP session;
 - no host worker can read another workspace outside its explicit workspace boundary.
 
@@ -405,13 +427,14 @@ If ChatGPT does not advertise one of the required capabilities, report that boun
 ## 17. Rollout sequence
 
 1. Add capability detection and tests.
-2. Add text-only `host_workers_run` for one/many tasks.
-3. Add read-only sampling tool loop.
-4. Add session-scoped manager and concurrency limits.
-5. Add task-augmented `host_workers_start/get/cancel`.
-6. Run focused + full regression gates.
-7. Run real ChatGPT MCP capability and behavior gates.
-8. Only after evidence from V1, consider write-capable host workers or additional orchestration primitives.
+2. Add session-scoped worker creation/get/cancel with stable worker IDs.
+3. Add text-only `host_worker_send` and prove follow-up context continuity.
+4. Add `host_workers_send_batch` with a maximum of four concurrent worker turns.
+5. Add the read-only sampling tool loop.
+6. Add task-augmented background-send semantics only if the real host advertises support.
+7. Run focused + full regression gates.
+8. Run real ChatGPT MCP capability and behavior gates.
+9. Only after evidence from V1, consider write-capable host workers or additional orchestration primitives.
 
 ## 18. Success criteria
 
