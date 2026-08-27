@@ -28,11 +28,11 @@ test("tool modes expose the expected host-facing tool surface", async (t) => {
   }> = [
     {
       mode: "claude",
-      expected: ["open_workspace", "read", "write", "edit", "bash", "show_changes", "host_workers_capabilities"],
+      expected: ["open_workspace", "read", "write", "edit", "bash", "show_changes", "host_workers_capabilities", "host_worker_create", "host_worker_get", "host_worker_cancel"],
     },
     {
       mode: "codex",
-      expected: ["open_workspace", "read", "apply_patch", "exec_command", "write_stdin", "show_changes", "host_workers_capabilities"],
+      expected: ["open_workspace", "read", "apply_patch", "exec_command", "write_stdin", "show_changes", "host_workers_capabilities", "host_worker_create", "host_worker_get", "host_worker_cancel"],
     },
   ];
 
@@ -77,6 +77,47 @@ test("host worker capability tool reflects client advertised sampling capabiliti
     background: true,
     maxConcurrency: 4,
   });
+});
+
+test("host worker objects are scoped to the MCP session that created them", async (t) => {
+  const clientCapabilities: ClientCapabilities = { sampling: { tools: {} } };
+  const first = await fixture(t, { clientCapabilities });
+  const second = await fixture(t, { clientCapabilities });
+  const workspaceId = structuredContent(await callOpen(first.client, first.project, "host-worker")).workspaceId;
+  assert.equal(typeof workspaceId, "string");
+
+  const created = structuredContent(await first.client.callTool({
+    name: "host_worker_create",
+    arguments: {
+      workspaceId,
+      key: "runtime",
+      goal: "Inspect runtime lifecycle.",
+      requireTools: true,
+    },
+  }));
+  assert.match(created.id as string, /^hw_[a-f0-9]+$/);
+  assert.equal(created.status, "idle");
+  assert.equal(created.workspaceId, workspaceId);
+
+  const fetched = structuredContent(await first.client.callTool({
+    name: "host_worker_get",
+    arguments: { workerId: created.id },
+  }));
+  assert.deepEqual(fetched, created);
+
+  const foreign = await second.client.callTool({
+    name: "host_worker_get",
+    arguments: { workerId: created.id },
+  });
+  assert.equal(foreign.isError, true);
+  assert.match(responseText(foreign), /worker_not_found/);
+
+  const cancelled = structuredContent(await first.client.callTool({
+    name: "host_worker_cancel",
+    arguments: { workerId: created.id },
+  }));
+  assert.equal(cancelled.status, "cancelled");
+  assert.equal(typeof cancelled.completedAt, "string");
 });
 
 test("UI metadata is limited to workspace and aggregate review", async (t) => {

@@ -44,6 +44,7 @@ import { openAiConversationScopeId } from "./request-meta.js";
 import { shutdownHttpServer } from "./server-shutdown.js";
 import { formatPathForPrompt } from "./skills.js";
 import { createWorkspaceStore } from "./workspace-store.js";
+import { HostWorkerManager } from "./host-worker-manager.js";
 import { resolveHostWorkerCapabilities } from "./host-worker-types.js";
 import { formatAgentsPath, WorkspaceRegistry } from "./workspaces.js";
 import {
@@ -300,6 +301,20 @@ export function createMcpServer(
       instructions: serverInstructions(config, toolSurface),
     },
   );
+  const hostWorkers = new HostWorkerManager(
+    () => resolveHostWorkerCapabilities(server.server.getClientCapabilities()),
+  );
+  const hostWorkerSnapshotOutputSchema = {
+    id: z.string(),
+    key: z.string().optional(),
+    workspaceId: z.string(),
+    status: z.enum(["idle", "queued", "running", "completed", "failed", "cancelled"]),
+    createdAt: z.string(),
+    startedAt: z.string().optional(),
+    completedAt: z.string().optional(),
+    finalResponse: z.string().optional(),
+    error: z.string().optional(),
+  };
 
   registerAppResource(
     server,
@@ -563,6 +578,78 @@ export function createMcpServer(
           `Host workers: sampling=${capabilities.sampling}, tools=${capabilities.tools}, taskSampling=${capabilities.taskSampling}, background=${capabilities.background}, maxConcurrency=${capabilities.maxConcurrency}`,
         )],
         structuredContent: capabilities,
+      };
+    },
+  );
+
+  server.registerTool(
+    "host_worker_create",
+    {
+      title: "Create host worker",
+      description:
+        "Create a session-bound host-native worker object for one workspace without invoking an external coding-agent provider.",
+      inputSchema: {
+        workspaceId: z.string().describe(workspaceIdDescription),
+        key: z.string().trim().min(1).optional(),
+        goal: z.string().trim().min(1),
+        context: z.string().optional(),
+        constraints: z.array(z.string()).optional(),
+        expectedOutput: z.string().optional(),
+        requireTools: z.boolean().optional(),
+      },
+      outputSchema: hostWorkerSnapshotOutputSchema,
+      annotations: { readOnlyHint: true },
+    },
+    async ({ workspaceId, ...input }) => {
+      const workspace = workspaces.getWorkspace(workspaceId);
+      const snapshot = hostWorkers.create({
+        workspaceId,
+        workspaceRoot: workspace.root,
+        ...input,
+      });
+      return {
+        content: [textBlock(`Created host worker ${snapshot.id}.`)],
+        structuredContent: snapshot,
+      };
+    },
+  );
+
+  server.registerTool(
+    "host_worker_get",
+    {
+      title: "Get host worker",
+      description: "Read the current lifecycle snapshot for a host-native worker created in this MCP session.",
+      inputSchema: {
+        workerId: z.string(),
+      },
+      outputSchema: hostWorkerSnapshotOutputSchema,
+      annotations: { readOnlyHint: true },
+    },
+    async ({ workerId }) => {
+      const snapshot = hostWorkers.get(workerId);
+      return {
+        content: [textBlock(`Host worker ${snapshot.id}: ${snapshot.status}.`)],
+        structuredContent: snapshot,
+      };
+    },
+  );
+
+  server.registerTool(
+    "host_worker_cancel",
+    {
+      title: "Cancel host worker",
+      description: "Cancel a host-native worker created in this MCP session.",
+      inputSchema: {
+        workerId: z.string(),
+      },
+      outputSchema: hostWorkerSnapshotOutputSchema,
+      annotations: { readOnlyHint: true },
+    },
+    async ({ workerId }) => {
+      const snapshot = hostWorkers.cancel(workerId);
+      return {
+        content: [textBlock(`Host worker ${snapshot.id}: ${snapshot.status}.`)],
+        structuredContent: snapshot,
       };
     },
   );

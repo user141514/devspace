@@ -10,6 +10,37 @@ export interface HostWorkerCapabilities extends Record<string, unknown> {
   maxConcurrency: number;
 }
 
+export type HostWorkerStatus =
+  | "idle"
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export interface HostWorkerCreateInput {
+  workspaceId: string;
+  workspaceRoot: string;
+  key?: string;
+  goal: string;
+  context?: string;
+  constraints?: string[];
+  expectedOutput?: string;
+  requireTools?: boolean;
+}
+
+export interface HostWorkerSnapshot extends Record<string, unknown> {
+  id: string;
+  key?: string;
+  workspaceId: string;
+  status: HostWorkerStatus;
+  createdAt: string;
+  startedAt?: string;
+  completedAt?: string;
+  finalResponse?: string;
+  error?: string;
+}
+
 export function resolveHostWorkerCapabilities(
   capabilities: ClientCapabilities | undefined,
 ): HostWorkerCapabilities {
