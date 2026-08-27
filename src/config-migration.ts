@@ -65,7 +65,10 @@ export function migrateLegacyConfig(value: unknown): DevspaceConfig {
       worktreeRoot: legacy.worktreeRoot,
     }),
     storage: definedEntries({ stateDir: legacy.stateDir }),
-    tools: definedEntries({ mode: legacy.tools?.mode }),
+    // Legacy configs without an explicit tool mode ran the pre-mode standard
+    // surface (bash/edit/write). Migrate to the closest current surface so
+    // hosts keep calling the same tool names.
+    tools: definedEntries({ mode: legacy.tools?.mode ?? "claude" }),
     ui: definedEntries({ enabled: legacy.ui?.enabled }),
     artifacts: definedEntries({
       enabled: legacy.artifactsEnabled,

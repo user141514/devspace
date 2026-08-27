@@ -35,7 +35,7 @@ withConfigDir((configDir, env) => {
   assert.deepEqual(files.config.workspaces.allowedRoots, ["/work"]);
   assert.equal(files.config.artifacts.enabled, true);
   assert.equal(files.config.subagents.enabled, true);
-  assert.equal(files.config.tools.mode, "codex");
+  assert.equal(files.config.tools.mode, "claude");
   assert.equal(files.config.ui.enabled, true);
   assert.equal(files.auth.ownerToken, "test-owner-token");
   assert.equal(existsSync(join(configDir, "config.json")), false);
@@ -44,6 +44,18 @@ withConfigDir((configDir, env) => {
 
   const nextLoad = loadDevspaceFiles(env);
   assert.equal(nextLoad.migratedLegacyConfig, false);
+});
+
+withConfigDir((configDir, env) => {
+  writeFileSync(join(configDir, "config.json"), JSON.stringify({
+    port: 8787,
+    allowedRoots: ["/work"],
+    tools: { mode: "codex" },
+  }));
+
+  const files = loadDevspaceFiles(env);
+  assert.equal(files.migratedLegacyConfig, true);
+  assert.equal(files.config.tools.mode, "codex");
 });
 
 await withConfigDirAsync(async (configDir) => {
