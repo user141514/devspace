@@ -259,7 +259,7 @@ test("host worker batch sends execute concurrently and preserve worker result or
   );
 });
 
-test("UI metadata is limited to workspace and aggregate review", async (t) => {
+test("UI metadata is limited to aggregate review", async (t) => {
   for (const uiEnabled of [true, false]) {
     await t.test(uiEnabled ? "enabled" : "disabled", async (nested) => {
       const context = await fixture(nested, { toolMode: "claude", uiEnabled });
@@ -269,7 +269,7 @@ test("UI metadata is limited to workspace and aggregate review", async (t) => {
         .map((tool) => tool.name)
         .sort();
 
-      assert.deepEqual(toolsWithUi, uiEnabled ? ["open_workspace", "show_changes"] : []);
+      assert.deepEqual(toolsWithUi, uiEnabled ? ["show_changes"] : []);
     });
   }
 });

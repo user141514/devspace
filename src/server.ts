@@ -420,7 +420,7 @@ export function createMcpServer(
         ]),
         instruction: z.string(),
       },
-      ...workspaceAppDescriptorMeta(config),
+      _meta: {},
       annotations: { readOnlyHint: true },
     },
     async ({ path, mode, baseRef }, { _meta }) => {
