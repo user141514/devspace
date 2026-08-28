@@ -74,11 +74,16 @@ export class AgentProviderExecutionError extends TaggedError(
   "AgentProviderExecutionError",
 )<AgentProviderErrorFields & { code: "PROVIDER_EXECUTION_ERROR" }>() {}
 
+export class AgentProviderQuotaExhaustedError extends TaggedError(
+  "AgentProviderQuotaExhaustedError",
+)<AgentProviderErrorFields & { code: "PROVIDER_QUOTA_EXHAUSTED" }>() {}
+
 export type AgentProviderError =
   | AgentProviderUnavailableError
   | AgentProviderCancelledError
   | AgentProviderProtocolError
-  | AgentProviderExecutionError;
+  | AgentProviderExecutionError
+  | AgentProviderQuotaExhaustedError;
 
 interface AgentDaemonErrorFields extends Record<string, unknown> {
   operation: string;
@@ -171,7 +176,8 @@ export function isAgentProviderError(error: unknown): error is AgentProviderErro
   return AgentProviderUnavailableError.is(error)
     || AgentProviderCancelledError.is(error)
     || AgentProviderProtocolError.is(error)
-    || AgentProviderExecutionError.is(error);
+    || AgentProviderExecutionError.is(error)
+    || AgentProviderQuotaExhaustedError.is(error);
 }
 
 export function isAgentDaemonError(error: unknown): error is AgentDaemonError {
@@ -203,6 +209,7 @@ export function toAgentErrorPayload(error: LocalAgentError): AgentErrorPayload {
     AgentProviderCancelledError: providerErrorPayload,
     AgentProviderProtocolError: providerErrorPayload,
     AgentProviderExecutionError: providerErrorPayload,
+    AgentProviderQuotaExhaustedError: providerErrorPayload,
     AgentDaemonUnavailableError: daemonErrorPayload,
     AgentDaemonStartupError: daemonErrorPayload,
     AgentDaemonTimeoutError: daemonErrorPayload,
@@ -265,7 +272,8 @@ export function agentErrorFromPayload(payload: {
     case "PROVIDER_UNAVAILABLE":
     case "PROVIDER_CANCELLED":
     case "PROVIDER_PROTOCOL_ERROR":
-    case "PROVIDER_EXECUTION_ERROR": {
+    case "PROVIDER_EXECUTION_ERROR":
+    case "PROVIDER_QUOTA_EXHAUSTED": {
       if (!provider) return undefined;
       const fields = {
         provider,
@@ -282,6 +290,9 @@ export function agentErrorFromPayload(payload: {
       }
       if (payload.code === "PROVIDER_PROTOCOL_ERROR") {
         return new AgentProviderProtocolError({ code: payload.code, ...fields });
+      }
+      if (payload.code === "PROVIDER_QUOTA_EXHAUSTED") {
+        return new AgentProviderQuotaExhaustedError({ code: payload.code, ...fields });
       }
       return new AgentProviderExecutionError({ code: payload.code, ...fields });
     }

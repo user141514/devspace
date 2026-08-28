@@ -7,6 +7,9 @@ const capabilities = {
   tools: true,
   taskSampling: false,
   background: false,
+  providerBacked: true,
+  available: true,
+  preferredMode: "sampling" as const,
   maxConcurrency: 4,
 };
 
@@ -35,12 +38,28 @@ test("create returns an idle worker snapshot with a stable session-local id", ()
   assert.deepEqual(manager.get(created.id), created);
 });
 
-test("create rejects unavailable sampling and required tools", () => {
-  const noSampling = new HostWorkerManager({ ...capabilities, sampling: false, tools: false });
-  assert.throws(() => noSampling.create(createInput()), /sampling_not_supported/);
+test("create accepts provider-backed execution without sampling but still gates native sampling tools", () => {
+  const providerOnly = new HostWorkerManager({
+    ...capabilities,
+    sampling: false,
+    tools: false,
+    providerBacked: true,
+    available: true,
+    preferredMode: "provider" as const,
+  });
+  const created = providerOnly.create({ ...createInput(), requireTools: false });
+  assert.equal(created.status, "idle");
+  assert.throws(() => providerOnly.create(createInput()), /sampling_tools_not_supported/);
 
-  const noTools = new HostWorkerManager({ ...capabilities, tools: false });
-  assert.throws(() => noTools.create(createInput()), /sampling_tools_not_supported/);
+  const unavailable = new HostWorkerManager({
+    ...capabilities,
+    sampling: false,
+    tools: false,
+    providerBacked: false,
+    available: false,
+    preferredMode: "unavailable" as const,
+  });
+  assert.throws(() => unavailable.create({ ...createInput(), requireTools: false }), /host_worker_execution_unavailable/);
 });
 
 test("unknown worker ids are rejected", () => {

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { promisify } from "node:util";
+import { Result } from "better-result";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import {
@@ -16,6 +17,7 @@ import { loadConfig, type ServerConfig, type ToolMode } from "./config.js";
 import type { LocalAgentProviderAvailability } from "./local-agent-availability.js";
 import { buildLocalAgentProviderStatuses } from "./local-agent-catalog.js";
 import type { SubagentsConfig } from "./local-agent-config.js";
+import type { LocalAgentRecord } from "./local-agent-store.js";
 import { createReviewCheckpointManager } from "./review-checkpoints.js";
 import { ProcessSessionManager } from "./process-sessions.js";
 import { createMcpServer } from "./server.js";
@@ -79,8 +81,45 @@ test("host worker capability tool reflects client advertised sampling capabiliti
     tools: true,
     taskSampling: true,
     background: true,
+    providerBacked: false,
+    available: true,
+    preferredMode: "sampling",
     maxConcurrency: 4,
   });
+});
+
+test("host workers use provider-backed Codex execution when client sampling is unavailable", async (t) => {
+  const localAgentClient = new FakeHostWorkerLocalAgentClient();
+  const context = await fixture(t, {
+    localAgentProviders: [{ name: "codex", available: true }],
+    localAgentClient,
+  });
+  const opened = structuredContent(await callOpen(context.client, context.project));
+  const workspaceId = opened.workspaceId as string;
+
+  const capabilities = structuredContent(await context.client.callTool({
+    name: "host_workers_capabilities",
+    arguments: {},
+  }));
+  assert.equal(capabilities.sampling, false);
+  assert.equal(capabilities.providerBacked, true);
+  assert.equal(capabilities.preferredMode, "provider");
+
+  const created = structuredContent(await context.client.callTool({
+    name: "host_worker_create",
+    arguments: {
+      workspaceId,
+      goal: "Inspect provider-backed execution.",
+    },
+  }));
+  const sent = structuredContent(await context.client.callTool({
+    name: "host_worker_send",
+    arguments: { workerId: created.id, message: "Return provider evidence." },
+  }));
+
+  assert.equal(sent.status, "completed");
+  assert.equal(sent.finalResponse, "codex-provider-result");
+  assert.deepEqual(localAgentClient.startedTargets, ["codex"]);
 });
 
 test("host worker objects are scoped to the MCP session that created them", async (t) => {
@@ -554,6 +593,49 @@ test("checkout reuse and context suppression survive a registry restart", async 
   }
 });
 
+class FakeHostWorkerLocalAgentClient {
+  readonly startedTargets: string[] = [];
+  private readonly records = new Map<string, LocalAgentRecord>();
+  private nextId = 1;
+
+  async start(input: { target: string; workspaceRoot: string; workspaceId?: string }) {
+    this.startedTargets.push(input.target);
+    const id = `agt_host_${this.nextId++}`;
+    const now = new Date().toISOString();
+    const record: LocalAgentRecord = {
+      id,
+      workspaceId: input.workspaceId,
+      workspaceRoot: input.workspaceRoot,
+      profileName: input.target,
+      provider: input.target,
+      status: "running",
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.records.set(id, record);
+    return Result.ok(record);
+  }
+
+  async continue(agentId: string) {
+    const current = this.records.get(agentId)!;
+    const running = { ...current, status: "running" as const, latestResponse: undefined };
+    this.records.set(agentId, running);
+    return Result.ok(running);
+  }
+
+  async get(agentId: string) {
+    const current = this.records.get(agentId)!;
+    const completed: LocalAgentRecord = {
+      ...current,
+      status: "idle",
+      latestResponse: "codex-provider-result",
+      updatedAt: new Date().toISOString(),
+    };
+    this.records.set(agentId, completed);
+    return Result.ok(completed);
+  }
+}
+
 interface ServerFixture {
   client: Client;
   project: string;
@@ -571,6 +653,7 @@ async function fixture(
     toolMode?: ToolMode;
     uiEnabled?: boolean;
     clientCapabilities?: ClientCapabilities;
+    localAgentClient?: FakeHostWorkerLocalAgentClient;
   } = {},
 ): Promise<ServerFixture> {
   const root = await mkdtemp(join(tmpdir(), "devspace-server-test-"));
@@ -643,6 +726,7 @@ async function fixture(
     new ProcessSessionManager(),
     resolveLocalAgentProviders,
     [],
+    options.localAgentClient,
   );
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "devspace-test-client", version: "1.0.0" });

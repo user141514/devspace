@@ -81,6 +81,10 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
         output({ method: "turn/completed", params: { threadId: message.params.threadId, turn: { id: turnId, status: "failed", error: { message: "fake failure" } } } });
         return;
       }
+      if (message.params.input[0].text === "quota") {
+        output({ method: "turn/completed", params: { threadId: message.params.threadId, turn: { id: turnId, status: "failed", error: { message: "You've hit your usage limit. Please try again later." } } } });
+        return;
+      }
       if (message.params.input[0].text === "empty") {
         output({ method: "turn/completed", params: { threadId: message.params.threadId, turn: { id: turnId, status: "completed", items: [] } } });
         return;
@@ -131,6 +135,17 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
       assert.equal(failed.error.code, "PROVIDER_EXECUTION_ERROR");
       assert.equal(failed.error.provider, "codex");
       assert.equal(failed.error.retryable, false);
+    }
+    const quotaFailure = await runtime.run({
+      prompt: "quota",
+      workspaceRoot: "/tmp/project",
+      providerSessionId: first.providerSessionId ?? undefined,
+    });
+    assert.equal(quotaFailure.isErr(), true);
+    if (quotaFailure.isErr()) {
+      assert.equal(quotaFailure.error.code, "PROVIDER_QUOTA_EXHAUSTED");
+      assert.equal(quotaFailure.error.provider, "codex");
+      assert.equal(quotaFailure.error.retryable, true);
     }
     const protocolFailure = await runtime.run({
       prompt: "empty",

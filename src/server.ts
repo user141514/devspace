@@ -45,8 +45,11 @@ import { shutdownHttpServer } from "./server-shutdown.js";
 import { formatPathForPrompt } from "./skills.js";
 import { createWorkspaceStore } from "./workspace-store.js";
 import { HostWorkerManager } from "./host-worker-manager.js";
+import { HostWorkerExecutionRouter } from "./host-worker-execution-router.js";
+import { HostWorkerProviderRuntime } from "./host-worker-provider-runtime.js";
 import { HostWorkerRuntime } from "./host-worker-runtime.js";
 import { resolveHostWorkerCapabilities } from "./host-worker-types.js";
+import { createLocalAgentClient, type LocalAgentClient } from "./local-agent-client.js";
 import { formatAgentsPath, WorkspaceRegistry } from "./workspaces.js";
 import {
   getLocalAgentProviderAvailabilitySnapshot,
@@ -288,6 +291,7 @@ export function createMcpServer(
   processSessions: ProcessSessionManager,
   resolveLocalAgentProviders: () => LocalAgentProviderStatus[],
   incomingArtifactAdapters: readonly IncomingArtifactAdapter[],
+  localAgentClient?: Pick<LocalAgentClient, "start" | "continue" | "get">,
 ): McpServer {
   const toolSurface = getToolSurface(config.toolMode);
   const server = new McpServer(
@@ -302,9 +306,22 @@ export function createMcpServer(
       instructions: serverInstructions(config, toolSurface),
     },
   );
-  const hostWorkers = new HostWorkerManager(
-    () => resolveHostWorkerCapabilities(server.server.getClientCapabilities()),
+  const providerBackedAvailable = () => resolveLocalAgentProviders().some(
+    (provider) => provider.id === "codex" && provider.usable,
+  );
+  const resolveHostWorkerExecutionCapabilities = () => resolveHostWorkerCapabilities(
+    server.server.getClientCapabilities(),
+    providerBackedAvailable(),
+  );
+  const providerClient = localAgentClient ?? createLocalAgentClient(config);
+  const hostWorkerRuntime = new HostWorkerExecutionRouter(
+    resolveHostWorkerExecutionCapabilities,
     new HostWorkerRuntime(server),
+    new HostWorkerProviderRuntime(providerClient),
+  );
+  const hostWorkers = new HostWorkerManager(
+    resolveHostWorkerExecutionCapabilities,
+    hostWorkerRuntime,
   );
   const hostWorkerSnapshotOutputSchema = {
     id: z.string(),
@@ -569,15 +586,18 @@ export function createMcpServer(
         tools: z.boolean(),
         taskSampling: z.boolean(),
         background: z.boolean(),
+        providerBacked: z.boolean(),
+        available: z.boolean(),
+        preferredMode: z.enum(["sampling", "provider", "unavailable"]),
         maxConcurrency: z.number().int().positive(),
       },
       annotations: { readOnlyHint: true },
     },
     async () => {
-      const capabilities = resolveHostWorkerCapabilities(server.server.getClientCapabilities());
+      const capabilities = resolveHostWorkerExecutionCapabilities();
       return {
         content: [textBlock(
-          `Host workers: sampling=${capabilities.sampling}, tools=${capabilities.tools}, taskSampling=${capabilities.taskSampling}, background=${capabilities.background}, maxConcurrency=${capabilities.maxConcurrency}`,
+          `Host workers: sampling=${capabilities.sampling}, tools=${capabilities.tools}, taskSampling=${capabilities.taskSampling}, background=${capabilities.background}, providerBacked=${capabilities.providerBacked}, preferredMode=${capabilities.preferredMode}, maxConcurrency=${capabilities.maxConcurrency}`,
         )],
         structuredContent: capabilities,
       };
@@ -589,7 +609,7 @@ export function createMcpServer(
     {
       title: "Create host worker",
       description:
-        "Create a session-bound host-native worker object for one workspace without invoking an external coding-agent provider.",
+        "Create a session-bound worker object for one workspace. Execution uses MCP host sampling when available, otherwise the configured Codex-first local provider route.",
       inputSchema: {
         workspaceId: z.string().describe(workspaceIdDescription),
         key: z.string().trim().min(1).optional(),

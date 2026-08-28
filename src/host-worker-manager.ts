@@ -1,9 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { SamplingMessage } from "@modelcontextprotocol/sdk/types.js";
-import type {
-  HostWorkerRunTurnInput,
-  HostWorkerRunTurnResult,
-} from "./host-worker-runtime.js";
+import type { HostWorkerProviderRunTurnInput } from "./host-worker-provider-runtime.js";
+import type { HostWorkerRunTurnResult } from "./host-worker-runtime.js";
 import type {
   HostWorkerCapabilities,
   HostWorkerCreateInput,
@@ -12,7 +10,7 @@ import type {
 } from "./host-worker-types.js";
 
 interface HostWorkerTurnRuntime {
-  runTurn(input: HostWorkerRunTurnInput): Promise<HostWorkerRunTurnResult>;
+  runTurn(input: HostWorkerProviderRunTurnInput): Promise<HostWorkerRunTurnResult>;
 }
 
 interface HostWorkerRecord {
@@ -44,7 +42,7 @@ export class HostWorkerManager {
   create(input: HostWorkerCreateInput): HostWorkerSnapshot {
     this.assertOpen();
     const capabilities = this.resolveCapabilities();
-    if (!capabilities.sampling) throw new Error("sampling_not_supported");
+    if (!capabilities.available) throw new Error("host_worker_execution_unavailable");
     if (input.requireTools && !capabilities.tools) {
       throw new Error("sampling_tools_not_supported");
     }
@@ -92,6 +90,9 @@ export class HostWorkerManager {
       if (worker.abortController.signal.aborted) throw new Error("worker_cancelled");
       worker.snapshot.status = "running";
       const result = await this.runtime.runTurn({
+        workerId: worker.snapshot.id,
+        workspaceId: worker.input.workspaceId,
+        workspaceRoot: worker.input.workspaceRoot,
         taskPacket: buildTaskPacket(worker.input),
         history: worker.history,
         message,

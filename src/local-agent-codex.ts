@@ -5,6 +5,7 @@ import { createInterface } from "node:readline";
 import {
   AgentProviderExecutionError,
   AgentProviderProtocolError,
+  AgentProviderQuotaExhaustedError,
   AgentProviderUnavailableError,
   captureAgentProviderResult,
 } from "./local-agent-errors.js";
@@ -149,6 +150,16 @@ export class CodexAppServerRuntime implements LocalAgentRuntime {
         const completed = await this.rpc.runTurn(threadId, turnParams(input, threadId));
         const parsed = parseCompletedTurn(completed.event.params, completed.items);
         if (parsed.failure) {
+          if (isCodexQuotaExhaustedFailure(parsed.failure)) {
+            throw new AgentProviderQuotaExhaustedError({
+              code: "PROVIDER_QUOTA_EXHAUSTED",
+              provider: this.provider,
+              operation: "run",
+              retryable: true,
+              cause: completed.event.params,
+              message: "Codex usage quota is exhausted.",
+            });
+          }
           throw new AgentProviderExecutionError({
             code: "PROVIDER_EXECUTION_ERROR",
             provider: this.provider,
@@ -512,6 +523,18 @@ function parseCompletedTurn(params: unknown, items: unknown[]): {
     ? directString(error?.message) ?? "Codex turn failed."
     : undefined;
   return { finalResponse, items: completedItems, failure };
+}
+
+export function isCodexQuotaExhaustedFailure(message: string): boolean {
+  const normalized = message.trim().toLowerCase();
+  return [
+    "usage limit",
+    "quota exceeded",
+    "quota exhausted",
+    "insufficient quota",
+    "credits exhausted",
+    "no credits remaining",
+  ].some((marker) => normalized.includes(marker));
 }
 
 export function codexAppServerError(message: string, version?: string, stderr?: string): Error {

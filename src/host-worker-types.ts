@@ -7,6 +7,9 @@ export interface HostWorkerCapabilities extends Record<string, unknown> {
   tools: boolean;
   taskSampling: boolean;
   background: boolean;
+  providerBacked: boolean;
+  available: boolean;
+  preferredMode: "sampling" | "provider" | "unavailable";
   maxConcurrency: number;
 }
 
@@ -43,6 +46,7 @@ export interface HostWorkerSnapshot extends Record<string, unknown> {
 
 export function resolveHostWorkerCapabilities(
   capabilities: ClientCapabilities | undefined,
+  providerBacked = false,
 ): HostWorkerCapabilities {
   const sampling = capabilities?.sampling !== undefined;
   const tools = capabilities?.sampling?.tools !== undefined;
@@ -53,6 +57,9 @@ export function resolveHostWorkerCapabilities(
     tools,
     taskSampling,
     background: taskSampling,
+    providerBacked,
+    available: sampling || providerBacked,
+    preferredMode: sampling ? "sampling" : providerBacked ? "provider" : "unavailable",
     maxConcurrency: HOST_WORKER_MAX_CONCURRENCY,
   };
 }
