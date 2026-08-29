@@ -27,6 +27,10 @@ assert.equal(statuses.find((provider) => provider.id === "opencode")?.enabled, f
 const profiles: LocalAgentProfile[] = [
   {
     name: "reviewer",
+    qualifiedName: "project:reviewer",
+    scope: "project",
+    isDefault: true,
+    shadows: [],
     description: "Review changes.",
     provider: "codex",
     filePath: "/project/reviewer.md",
@@ -35,6 +39,10 @@ const profiles: LocalAgentProfile[] = [
   },
   {
     name: "custom",
+    qualifiedName: "project:custom",
+    scope: "project",
+    isDefault: true,
+    shadows: [],
     description: "Use a custom model.",
     provider: "codex",
     model: "gpt-custom",
@@ -44,6 +52,10 @@ const profiles: LocalAgentProfile[] = [
   },
   {
     name: "claude-reviewer",
+    qualifiedName: "project:claude-reviewer",
+    scope: "project",
+    isDefault: true,
+    shadows: [],
     description: "Unavailable profile.",
     provider: "claude",
     filePath: "/project/claude.md",
@@ -54,6 +66,18 @@ const profiles: LocalAgentProfile[] = [
 const catalog = buildLocalAgentCatalog(config, profiles, statuses);
 assert.deepEqual(catalog.providers.map((provider) => provider.id), ["codex", "claude"]);
 assert.deepEqual(catalog.profiles.map((profile) => profile.name), ["reviewer", "custom"]);
-assert.equal(catalog.profiles[0]?.model, "gpt-default");
-assert.equal(catalog.profiles[0]?.effort, "medium");
+assert.deepEqual(catalog.profiles[0], {
+  name: "reviewer",
+  qualifiedName: "project:reviewer",
+  scope: "project",
+  profilePath: "/project/reviewer.md",
+  isDefault: true,
+  shadows: [],
+  shadowedBy: undefined,
+  description: "Review changes.",
+  provider: "codex",
+  model: "gpt-default",
+  effort: "medium",
+  nativeSubagents: undefined,
+});
 assert.equal(catalog.profiles[1]?.model, "gpt-custom");

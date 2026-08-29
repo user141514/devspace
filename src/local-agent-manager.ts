@@ -15,6 +15,7 @@ import {
   isLocalAgentProvider,
 } from "./local-agent-profiles.js";
 import {
+  resolveLocalAgentProfile,
   resolveLocalAgentTarget,
 } from "./local-agent-targets.js";
 import {
@@ -316,6 +317,7 @@ export class LocalAgentManager {
         writeMode: input.value.writeMode,
         model: input.value.model,
         effort: input.value.effort,
+        claudeNativeSubagents: input.value.claudeNativeSubagents,
         agentDir: this.agentDir,
       };
       const callbacks: LocalAgentRunCallbacks = {
@@ -425,6 +427,7 @@ export class LocalAgentManager {
       writeMode: overrides.writeMode ?? "allowed",
       model: record.model ?? profile?.model,
       effort: record.effort ?? profile?.effort,
+      claudeNativeSubagents: profile?.claudeNativeSubagents,
       modelOverrideRequested: overrides.model !== undefined,
       effortOverrideRequested: overrides.effort !== undefined,
     });
@@ -435,7 +438,7 @@ export class LocalAgentManager {
     profiles: readonly LocalAgentProfile[],
   ): BetterResult<LocalAgentProfile | undefined, AgentTargetError> {
     if (record.profileName === record.provider) return Result.ok(undefined);
-    const profile = profiles.find((candidate) => candidate.name === record.profileName);
+    const profile = resolveLocalAgentProfile(record.profileName, profiles);
     if (!profile) {
       return Result.err(new AgentTargetError({
         code: "UNKNOWN_TARGET",

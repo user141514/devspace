@@ -234,6 +234,7 @@ export class ClaudeLocalAgentDriver implements LocalAgentDriver {
           writeMode: context.writeMode,
           model: context.model,
           effort: context.effort,
+          claudeNativeSubagents: context.claudeNativeSubagents,
         };
         const query = await this.factory({
           context,
@@ -269,6 +270,12 @@ export function claudeQueryOptions(
     cwd: input.workspaceRoot,
     ...(input.model ? { model: input.model } : {}),
     ...(input.effort ? { thinking: { type: "adaptive" }, effort: input.effort } : {}),
+    ...(input.claudeNativeSubagents
+      ? {
+          allowedTools: ["Agent"],
+          agents: input.claudeNativeSubagents.agents,
+        }
+      : {}),
     ...(context.providerSessionId ? { resume: context.providerSessionId } : {}),
     permissionMode,
     sandbox: authority.sandbox,

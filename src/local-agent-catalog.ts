@@ -2,6 +2,7 @@ import type { SubagentsConfig } from "./local-agent-config.js";
 import type { LocalAgentProviderAvailability } from "./local-agent-availability.js";
 import {
   LOCAL_AGENT_PROVIDERS,
+  summarizeLocalAgentProfile,
   type LocalAgentProfile,
   type LocalAgentProfileSummary,
   type LocalAgentProvider,
@@ -63,9 +64,7 @@ export function buildLocalAgentCatalog(
       .map((profile) => {
         const provider = usable.get(profile.provider)!;
         return {
-          name: profile.name,
-          description: profile.description,
-          provider: profile.provider,
+          ...summarizeLocalAgentProfile(profile),
           model: profile.model ?? provider.model,
           effort: profile.effort ?? provider.effort,
         };

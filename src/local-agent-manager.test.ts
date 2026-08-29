@@ -26,6 +26,10 @@ const stateDir = join(root, "state");
 const scope = { workspaceId: "ws_test", workspaceRoot: root };
 const profile: LocalAgentProfile = {
   name: "reviewer",
+  qualifiedName: "project:reviewer",
+  scope: "project",
+  isDefault: true,
+  shadows: [],
   description: "Test reviewer",
   provider: "codex",
   filePath: join(root, "reviewer.md"),
@@ -35,6 +39,7 @@ const profile: LocalAgentProfile = {
 const disabledProfile: LocalAgentProfile = {
   ...profile,
   name: "disabled-reviewer",
+  qualifiedName: "project:disabled-reviewer",
   filePath: join(root, "disabled-reviewer.md"),
   disabled: true,
 };

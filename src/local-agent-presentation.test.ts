@@ -85,6 +85,11 @@ const catalog: LocalAgentCatalog = {
   ],
   profiles: [{
     name: "reviewer",
+    qualifiedName: "project:reviewer",
+    scope: "project",
+    profilePath: "/project/.devspace/agents/reviewer.md",
+    isDefault: true,
+    shadows: [],
     description: "Review changes.",
     provider: "codex",
     model: "gpt-5.4",

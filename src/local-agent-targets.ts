@@ -123,6 +123,16 @@ function unknownOptionError(option: string): Error {
   return new Error(`Unknown option: ${option}. Use -- before prompt text that starts with a dash.`);
 }
 
+export function resolveLocalAgentProfile(
+  target: string,
+  profiles: readonly LocalAgentProfile[],
+): LocalAgentProfile | undefined {
+  const qualifiedProfile = profiles.find((candidate) => candidate.qualifiedName === target);
+  if (qualifiedProfile) return qualifiedProfile;
+  if (target.includes(":")) return undefined;
+  return profiles.find((candidate) => candidate.name === target && candidate.isDefault);
+}
+
 export function resolveLocalAgentTarget(
   target: string,
   profiles: LocalAgentProfile[],
@@ -130,12 +140,12 @@ export function resolveLocalAgentTarget(
   effortOverride?: string,
   providerConfigs: readonly SubagentProviderConfig[] = [],
 ): LocalAgentTarget | undefined {
-  const profile = profiles.find((candidate) => candidate.name === target);
+  const profile = resolveLocalAgentProfile(target, profiles);
   if (profile) {
     const providerConfig = providerConfigs.find((entry) => entry.id === profile.provider);
     return {
       kind: "profile",
-      name: profile.name,
+      name: profile.qualifiedName,
       provider: profile.provider,
       model: modelOverride ?? profile.model ?? providerConfig?.model,
       effort: effortOverride ?? profile.effort ?? providerConfig?.effort,
@@ -158,7 +168,9 @@ export function resolveLocalAgentTarget(
 }
 
 export function formatAvailableLocalAgentTargets(profiles: LocalAgentProfile[]): string {
-  const profileNames = profiles.map((profile) => profile.name);
+  const profileNames = profiles.flatMap((profile) =>
+    profile.isDefault ? [profile.name, profile.qualifiedName] : [profile.qualifiedName],
+  );
   const parts = [
     profileNames.length > 0 ? `profiles: ${profileNames.join(", ")}` : undefined,
     `providers: ${LOCAL_AGENT_PROVIDERS.join(", ")}`,

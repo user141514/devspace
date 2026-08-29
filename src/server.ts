@@ -120,13 +120,23 @@ function serverInstructions(
 
 function formatVisibleAgent(agent: {
   name: string;
+  qualifiedName: string;
+  scope: "user" | "project";
+  isDefault: boolean;
+  shadows: string[];
   provider: string;
   model?: string;
   effort?: string;
+  nativeSubagents?: Array<{ name: string }>;
 }): string {
+  const defaultName = agent.isDefault ? `, default as ${agent.name}` : "";
+  const shadows = agent.shadows.length > 0 ? `, shadows ${agent.shadows.join(", ")}` : "";
   const model = agent.model ? `, model ${agent.model}` : "";
   const effort = agent.effort ? `, effort ${agent.effort}` : "";
-  return `${agent.name} (${agent.provider}${model}${effort})`;
+  const nativeSubagents = agent.nativeSubagents?.length
+    ? `, native subagents ${agent.nativeSubagents.map((subagent) => subagent.name).join(", ")}`
+    : "";
+  return `${agent.qualifiedName} (${agent.scope}${defaultName}${shadows}, ${agent.provider}${model}${effort}${nativeSubagents})`;
 }
 
 function formatAvailableAgentProvider(provider: {
@@ -154,12 +164,27 @@ const workspaceAgentsFileOutputSchema = z.object({
   content: z.string(),
 });
 
+const workspaceLocalNativeSubagentOutputSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  prompt: z.string(),
+  tools: z.array(z.string()),
+  model: z.string().optional(),
+});
+
 const workspaceLocalAgentOutputSchema = z.object({
   name: z.string(),
+  qualifiedName: z.string(),
+  scope: z.enum(["user", "project"]),
+  profilePath: z.string(),
+  isDefault: z.boolean(),
+  shadows: z.array(z.string()),
+  shadowedBy: z.string().optional(),
   description: z.string(),
   provider: z.string(),
   model: z.string().optional(),
   effort: z.string().optional(),
+  nativeSubagents: z.array(workspaceLocalNativeSubagentOutputSchema).optional(),
 });
 
 const workspaceLocalAgentProviderOutputSchema = z.object({
