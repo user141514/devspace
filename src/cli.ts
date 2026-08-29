@@ -7,6 +7,7 @@ import * as prompts from "@clack/prompts";
 import { getShellConfig } from "@earendil-works/pi-coding-agent";
 import { satisfies } from "semver";
 import { loadConfig } from "./config.js";
+import { resolveShellCommand } from "./process-platform.js";
 import { resolveCliWorkspaceContext } from "./cli-workspace.js";
 import {
   getLocalAgentProviderAvailabilitySnapshot,
@@ -769,6 +770,10 @@ function checkGitAvailable(): string {
 
 function checkBashShell(): string {
   try {
+    if (process.platform === "win32") {
+      const { executable, args } = resolveShellCommand("");
+      return `${executable} ${args.slice(0, -1).join(" ")}`;
+    }
     const { shell, args } = getShellConfig();
     return `${shell} ${args.join(" ")}`;
   } catch (error) {

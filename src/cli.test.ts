@@ -31,6 +31,15 @@ for (const flag of ["-v", "--version"]) {
   assert.equal(output, packageJson.version);
 }
 
+if (process.platform === "win32") {
+  const doctorOutput = execFileSync("node", ["--import", "tsx", "src/cli.ts", "doctor"], {
+    encoding: "utf8",
+    env: { ...process.env, DEVSPACE_CONFIG_DIR: join(tmpdir(), "devspace-cli-doctor-test") },
+  });
+  assert.match(doctorOutput, /Bash shell: .*\\Git\\(?:bin|usr\\bin)\\bash\.exe -lc/u);
+  assert.doesNotMatch(doctorOutput, /Bash shell: .*\\Windows\\System32\\bash\.exe/u);
+}
+
 const root = mkdtempSync(join(tmpdir(), "devspace-cli-agents-test-"));
 try {
   const configDir = join(root, ".devspace");
