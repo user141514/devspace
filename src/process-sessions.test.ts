@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { HeadTailBuffer, ProcessSessionManager } from "./process-sessions.js";
 
 const smallBuffer = new HeadTailBuffer(100);
@@ -48,15 +50,19 @@ assert.equal(foreground.exitCode, 0);
 assert.match(foreground.output, /foreground/);
 assert.equal(foreground.sessionId, undefined);
 
+const workspaceRoot = join(tmpdir(), "devspace-workspace-a");
 const environment = await manager.start({
   workspaceId: "workspace-a",
-  workspaceRoot: "/tmp/devspace-workspace-a",
+  workspaceRoot,
   cwd: process.cwd(),
   command: `${node} -e "console.log([process.env.NO_COLOR, process.env.TERM, process.env.PAGER, process.env.GIT_PAGER, process.env.GH_PAGER, process.env.CODEX_CI, process.env.DEVSPACE_WORKSPACE_ID, process.env.DEVSPACE_WORKSPACE_ROOT].join(','))"`,
   yieldTimeMs: 2_000,
 });
 assert.equal(environment.running, false);
-assert.match(environment.output, /1,dumb,cat,cat,cat,1,workspace-a,\/tmp\/devspace-workspace-a/);
+assert.equal(
+  environment.output.trim(),
+  `1,dumb,cat,cat,cat,1,workspace-a,${workspaceRoot}`,
+);
 
 const background = await manager.start({
   workspaceId: "workspace-a",
@@ -114,11 +120,18 @@ const defaultInteractive = await manager.start({
 assert.equal(defaultInteractive.running, true);
 assert.ok(defaultInteractive.sessionId);
 
-const defaultInputResult = await manager.write({
+let defaultInputResult = await manager.write({
   workspaceId: "workspace-a",
   sessionId: defaultInteractive.sessionId,
   chars: "hello\n",
 });
+if (defaultInputResult.running) {
+  defaultInputResult = await manager.write({
+    workspaceId: "workspace-a",
+    sessionId: defaultInteractive.sessionId,
+    yieldTimeMs: 2_000,
+  });
+}
 assert.equal(defaultInputResult.running, false);
 assert.match(defaultInputResult.output, /default-input:hello/);
 
