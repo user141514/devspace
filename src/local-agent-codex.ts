@@ -32,7 +32,10 @@ export function codexCommandEnvironment(env: NodeJS.ProcessEnv = process.env): N
   const next = { ...env };
   delete next.CODEX_INTERNAL_ORIGINATOR_OVERRIDE;
   if (env.CODEX_COMMAND) return next;
-  if (next.PATH) next.PATH = removeDevspaceNodeModulesBinFromPath(next.PATH);
+  const pathKey = environmentPathKey(next);
+  if (pathKey && next[pathKey]) {
+    next[pathKey] = removeDevspaceNodeModulesBinFromPath(next[pathKey]);
+  }
   return next;
 }
 
@@ -547,7 +550,8 @@ export function codexAppServerError(message: string, version?: string, stderr?: 
 
 function commandCandidates(command: string, env: NodeJS.ProcessEnv): string[] {
   if (command.includes("/") || command.includes("\\") || /\.(?:cmd|bat|exe|com)$/i.test(command)) return [command];
-  const path = env.PATH;
+  const pathKey = environmentPathKey(env);
+  const path = pathKey ? env[pathKey] : undefined;
   if (!path) return [command];
   const extensions = process.platform === "win32"
     ? (env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean)
@@ -555,6 +559,10 @@ function commandCandidates(command: string, env: NodeJS.ProcessEnv): string[] {
   return path.split(delimiter)
     .filter(Boolean)
     .flatMap((directory) => extensions.map((extension) => resolve(directory, `${command}${extension}`)));
+}
+
+function environmentPathKey(env: NodeJS.ProcessEnv): string | undefined {
+  return Object.keys(env).find((key) => key.toLowerCase() === "path");
 }
 
 function usesWindowsCommandShell(command: string): boolean {

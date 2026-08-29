@@ -35,6 +35,24 @@ assert.equal(
   undefined,
 );
 
+if (process.platform === "win32") {
+  const root = await mkdtemp(join(tmpdir(), "devspace-codex-path-case-test-"));
+  const command = join(root, "codex.CMD");
+  await writeFile(command, "@echo off\r\necho codex-cli 9.8.7\r\n");
+  const windowsEnv = { ...process.env };
+  for (const key of Object.keys(windowsEnv)) {
+    if (key.toLowerCase() === "path") delete windowsEnv[key];
+  }
+  windowsEnv.Path = root;
+  windowsEnv.PATHEXT = ".CMD";
+  assert.deepEqual(
+    resolveCodexCommand(windowsEnv),
+    { executable: command, version: "9.8.7" },
+    "Codex discovery must honor Windows' canonical Path environment-variable casing",
+  );
+  await rm(root, { recursive: true, force: true });
+}
+
 if (process.platform !== "win32") {
   const root = await mkdtemp(join(tmpdir(), "devspace-codex-app-server-test-"));
   const badBin = join(root, "bad-bin");
