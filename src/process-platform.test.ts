@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { runShellTool } from "./pi-tools.js";
 import { resolveShellCommand, terminateProcessTree } from "./process-platform.js";
 
 const explicitGitBash = "E:\\git\\Git\\bin\\bash.exe";
@@ -63,6 +64,19 @@ assert.deepEqual(resolveShellCommand("echo ok", "linux", { SHELL: "/usr/bin/fish
   executable: "/bin/sh",
   args: ["-c", "echo ok"],
 });
+
+if (process.platform === "win32") {
+  const result = await runShellTool(
+    { command: `printf 'DEVSPACE_GIT_BASH=%s\\n' "$BASH_VERSION"` },
+    { cwd: process.cwd(), root: process.cwd() },
+  );
+  assert.equal(result.isError, undefined);
+  assert.match(
+    result.content.map((item) => item.type === "text" ? item.text : "").join("\n"),
+    /DEVSPACE_GIT_BASH=\d/u,
+    "The public bash tool must execute inside Git Bash rather than the WSL launcher",
+  );
+}
 
 const windowsCalls: string[] = [];
 terminateProcessTree(

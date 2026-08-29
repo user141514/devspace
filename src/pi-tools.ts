@@ -10,6 +10,7 @@ import {
   type WriteToolInput,
   type AgentToolResult,
 } from "@earendil-works/pi-coding-agent";
+import { resolveShellCommand } from "./process-platform.js";
 import { resolveAllowedPath } from "./roots.js";
 
 type McpContent = { type: "text"; text: string } | { type: "image"; data: string; mimeType: string };
@@ -92,7 +93,12 @@ export async function editFileTool(input: EditToolInput, context: ToolContext): 
 }
 
 export async function runShellTool(input: BashToolInput, context: ToolContext): Promise<ToolResponse> {
-  const tool = createBashTool(context.cwd);
+  const tool = createBashTool(
+    context.cwd,
+    process.platform === "win32"
+      ? { shellPath: resolveShellCommand(input.command).executable }
+      : undefined,
+  );
   const timeout = input.timeout === undefined ? 30 : Math.min(input.timeout, 300);
 
   return runTool((params) => tool.execute("run_shell", params), {
