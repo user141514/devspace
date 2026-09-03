@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { basename, win32 } from "node:path";
+import { basename, delimiter, dirname, win32 } from "node:path";
 import { spawnSync } from "node:child_process";
 
 export interface ShellCommand {
@@ -51,6 +51,24 @@ const defaultProcessTreeRuntime: ProcessTreeRuntime = {
 };
 
 const LOGIN_SHELLS = new Set(["bash", "ksh", "zsh"]);
+
+export function exposeDevspaceSiblingExecutables(
+  environment: NodeJS.ProcessEnv,
+  devspaceExecutable: string | undefined = process.argv[1],
+): NodeJS.ProcessEnv {
+  if (!devspaceExecutable) return { ...environment };
+
+  const pathKey = Object.keys(environment).find((key) => key.toLowerCase() === "path") ?? "PATH";
+  const executableDirectory = dirname(devspaceExecutable);
+  const entries = (environment[pathKey] ?? "").split(delimiter).filter(Boolean);
+  const normalize = (value: string) =>
+    process.platform === "win32" ? value.toLowerCase() : value;
+  if (!entries.some((entry) => normalize(entry) === normalize(executableDirectory))) {
+    entries.unshift(executableDirectory);
+  }
+
+  return { ...environment, [pathKey]: entries.join(delimiter) };
+}
 const POSIX_SHELLS = new Set(["ash", "dash", "sh"]);
 
 function normalizeWindowsExecutable(path: string): string {

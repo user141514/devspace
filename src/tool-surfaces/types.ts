@@ -16,6 +16,10 @@ export const toolNames = {
 export const workspaceIdDescription =
   "Workspace to use. Reuse the current project's workspaceId.";
 
+export function localExecutableDiscoveryInstruction(shellTool: string): string {
+  return `Local capabilities may be installed as host executables rather than MCP tools. When the user names a local tool that is not present as a direct MCP function, do not conclude it is unavailable; first use ${shellTool} with command -v or type -a to resolve it, inspect its identity or --help when needed, and only then report it unavailable.`;
+}
+
 export const WRITE_TOOL_ANNOTATIONS = {
   readOnlyHint: false,
   destructiveHint: true,

@@ -1,5 +1,9 @@
 import { spawn } from "node:child_process";
-import { resolveShellCommand, terminateProcessTree } from "./process-platform.js";
+import {
+  exposeDevspaceSiblingExecutables,
+  resolveShellCommand,
+  terminateProcessTree,
+} from "./process-platform.js";
 
 const DEFAULT_EXEC_YIELD_MS = 10_000;
 const DEFAULT_INTERACTIVE_YIELD_MS = 250;
@@ -91,7 +95,7 @@ function processEnvironment(input?: {
   workspaceId?: string;
   workspaceRoot?: string;
 }): Record<string, string> {
-  return {
+  return exposeDevspaceSiblingExecutables({
     ...Object.fromEntries(
       Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined),
     ),
@@ -105,7 +109,7 @@ function processEnvironment(input?: {
     LC_ALL: process.env.LC_ALL ?? "C.UTF-8",
     ...(input?.workspaceId ? { DEVSPACE_WORKSPACE_ID: input.workspaceId } : {}),
     ...(input?.workspaceRoot ? { DEVSPACE_WORKSPACE_ROOT: input.workspaceRoot } : {}),
-  };
+  }) as Record<string, string>;
 }
 
 function codePointLength(value: string): number {

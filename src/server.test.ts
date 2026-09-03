@@ -55,6 +55,26 @@ test("tool modes expose the expected host-facing tool surface", async (t) => {
   }
 });
 
+test("host shell surfaces teach local executable discovery before declaring a capability unavailable", async (t) => {
+  for (const mode of ["claude", "codex"] as const) {
+    await t.test(mode, async (nested) => {
+      const context = await fixture(nested, { toolMode: mode, uiEnabled: false });
+      const instructions = context.client.getInstructions() ?? "";
+      assert.match(instructions, /command -v/);
+      assert.match(instructions, /type -a/);
+      assert.match(instructions, /do not conclude.*unavailable/i);
+
+      const tools = await context.client.listTools();
+      const shellTool = tools.tools.find((tool) =>
+        mode === "claude" ? tool.name === "bash" : tool.name === "exec_command",
+      );
+      assert.ok(shellTool);
+      assert.match(shellTool.description ?? "", /command -v/);
+      assert.match(shellTool.description ?? "", /type -a/);
+    });
+  }
+});
+
 test("host worker capability tool reflects client advertised sampling capabilities", async (t) => {
   const context = await fixture(t, {
     clientCapabilities: {

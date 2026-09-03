@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
-import { resolveShellCommand, terminateProcessTree } from "./process-platform.js";
+import {
+  exposeDevspaceSiblingExecutables,
+  resolveShellCommand,
+  terminateProcessTree,
+} from "./process-platform.js";
 
 const explicitGitBash = "E:\\git\\Git\\bin\\bash.exe";
 const windowsRuntime = {
@@ -63,6 +67,24 @@ assert.deepEqual(resolveShellCommand("echo ok", "linux", { SHELL: "/usr/bin/fish
   executable: "/bin/sh",
   args: ["-c", "echo ok"],
 });
+
+assert.deepEqual(
+  exposeDevspaceSiblingExecutables(
+    { PATH: "/usr/bin:/bin", HOME: "/home/test" },
+    "/home/test/.local/bin/devspace",
+  ).PATH,
+  "/home/test/.local/bin:/usr/bin:/bin",
+  "commands installed beside devspace must be discoverable from host shell tools",
+);
+
+assert.equal(
+  exposeDevspaceSiblingExecutables(
+    { PATH: "/home/test/.local/bin:/usr/bin", HOME: "/home/test" },
+    "/home/test/.local/bin/devspace",
+  ).PATH,
+  "/home/test/.local/bin:/usr/bin",
+  "the devspace executable directory must not be duplicated",
+);
 
 const windowsCalls: string[] = [];
 terminateProcessTree(
